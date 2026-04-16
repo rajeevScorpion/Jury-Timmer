@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Play, Pause, RotateCcw, Volume2, Clock3, AlertTriangle } from "lucide-react";
+import { Play, Pause, RotateCcw, Volume2, Clock3, AlertTriangle, User } from "lucide-react";
 
 const SUBJECT_COUNT = 4;
 const SUBJECT_SECONDS = 3 * 60; // 3 min each
@@ -28,9 +28,13 @@ function JuryTimerApp() {
   const [elapsed, setElapsed] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [studentName, setStudentName] = useState("");
+  const [showNameModal, setShowNameModal] = useState(false);
+  const [nameInput, setNameInput] = useState("");
   const intervalRef = useRef<number | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const lastCueRef = useRef(-1);
+  const nameInputRef = useRef<HTMLInputElement | null>(null);
 
   const checkpoints = useMemo(
     () => [
@@ -124,7 +128,24 @@ function JuryTimerApp() {
     }
   }, [elapsed, checkpoints]);
 
-  const startTimer = async () => {
+  const handleStartClick = () => {
+    if (elapsed > 0) {
+      // Resume — no modal needed
+      resumeTimer();
+      return;
+    }
+    setNameInput("");
+    setShowNameModal(true);
+    setTimeout(() => nameInputRef.current?.focus(), 50);
+  };
+
+  const handleNameSubmit = () => {
+    setStudentName(nameInput.trim());
+    setShowNameModal(false);
+    resumeTimer();
+  };
+
+  const resumeTimer = async () => {
     try {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       if (AudioCtx && !audioCtxRef.current) {
@@ -144,6 +165,7 @@ function JuryTimerApp() {
   const resetTimer = () => {
     setIsRunning(false);
     setElapsed(0);
+    setStudentName("");
     lastCueRef.current = -1;
   };
 
@@ -162,9 +184,17 @@ function JuryTimerApp() {
                 Communication Design &bull; Semester 06 &bull; 14 minutes per student
               </p>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Badge className="rounded-full px-4 py-1 text-sm">4 Subjects &times; 3 min</Badge>
-              <Badge variant="secondary" className="rounded-full px-4 py-1 text-sm">Final Feedback 2 min</Badge>
+            <div className="flex flex-col items-end gap-3">
+              {studentName && (
+                <div className="flex items-center gap-2 rounded-full bg-slate-900 px-5 py-2 text-white">
+                  <User className="h-4 w-4" />
+                  <span className="text-base font-semibold">{studentName}</span>
+                </div>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <Badge className="rounded-full px-4 py-1 text-sm">4 Subjects &times; 3 min</Badge>
+                <Badge variant="secondary" className="rounded-full px-4 py-1 text-sm">Final Feedback 2 min</Badge>
+              </div>
             </div>
           </div>
         </div>
@@ -237,7 +267,7 @@ function JuryTimerApp() {
 
               <div className="flex flex-wrap gap-3">
                 {!isRunning ? (
-                  <Button size="lg" className="rounded-2xl px-6" onClick={startTimer}>
+                  <Button size="lg" className="rounded-2xl px-6" onClick={handleStartClick}>
                     <Play className="mr-2 h-4 w-4" />
                     {elapsed === 0 ? "Start" : "Resume"}
                   </Button>
@@ -331,6 +361,50 @@ function JuryTimerApp() {
           </Card>
         </div>
       </div>
+
+      {showNameModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-xl">
+            <h2 className="text-2xl font-bold text-slate-900">Student Name</h2>
+            <p className="mt-1 text-sm text-slate-500">Enter the student's name before starting the timer.</p>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleNameSubmit();
+              }}
+            >
+              <input
+                ref={nameInputRef}
+                type="text"
+                value={nameInput}
+                onChange={(e) => setNameInput(e.target.value)}
+                placeholder="e.g. Aavriti Sharma"
+                className="mt-5 w-full rounded-2xl border border-slate-300 px-4 py-3 text-lg text-slate-900 outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+              />
+              <div className="mt-6 flex gap-3">
+                <Button
+                  type="submit"
+                  size="lg"
+                  className="flex-1 rounded-2xl"
+                  disabled={!nameInput.trim()}
+                >
+                  <Play className="mr-2 h-4 w-4" />
+                  Start Timer
+                </Button>
+                <Button
+                  type="button"
+                  size="lg"
+                  variant="outline"
+                  className="rounded-2xl"
+                  onClick={() => setShowNameModal(false)}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
