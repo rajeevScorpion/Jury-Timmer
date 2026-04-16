@@ -306,9 +306,10 @@ export default function JuryTimerApp() {
                     <>
                       <div className="flex items-center justify-center gap-2 text-xs uppercase tracking-[0.2em] text-red-200">
                         <AlertTriangle className="h-4 w-4" />
-                        <span>Overtime</span>
+                        <span>Total Time</span>
                       </div>
-                      <div className="mt-2 text-5xl font-bold tabular-nums md:text-7xl">+{fmt(overtime)}</div>
+                      <div className="mt-2 text-5xl font-bold tabular-nums md:text-7xl">{fmt(elapsed)}</div>
+                      <div className="mt-1 text-sm text-red-200">+{fmt(overtime)} overtime</div>
                     </>
                   ) : (
                     <>
