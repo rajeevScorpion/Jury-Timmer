@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Play, Pause, RotateCcw, Volume2, Clock3 } from "lucide-react";
+import { Play, Pause, RotateCcw, Volume2, Clock3, AlertTriangle } from "lucide-react";
 
 const SUBJECT_COUNT = 4;
 const SUBJECT_SECONDS = 3 * 60; // 3 min each
@@ -94,13 +94,13 @@ function JuryTimerApp() {
     }
   };
 
+  const isOvertime = elapsed > TOTAL_SECONDS;
+  const overtimeSeconds = Math.max(elapsed - TOTAL_SECONDS, 0);
+
   useEffect(() => {
-    if (isRunning && elapsed < TOTAL_SECONDS) {
+    if (isRunning) {
       intervalRef.current = window.setInterval(() => {
-        setElapsed((prev) => {
-          if (prev >= TOTAL_SECONDS) return TOTAL_SECONDS;
-          return prev + 1;
-        });
+        setElapsed((prev) => prev + 1);
       }, 1000);
     }
 
@@ -110,7 +110,7 @@ function JuryTimerApp() {
         intervalRef.current = null;
       }
     };
-  }, [isRunning, elapsed]);
+  }, [isRunning]);
 
   useEffect(() => {
     const hitIndex = checkpoints.findIndex((point) => elapsed === point);
@@ -120,7 +120,6 @@ function JuryTimerApp() {
         beep(880, 220, 1);
       } else {
         beep(1100, 260, 3);
-        setIsRunning(false);
       }
     }
   }, [elapsed, checkpoints]);
@@ -176,9 +175,21 @@ function JuryTimerApp() {
               <CardTitle className="text-xl md:text-2xl">Live Timer</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="rounded-3xl bg-slate-900 px-6 py-8 text-center text-white shadow-inner">
-                <div className="text-sm uppercase tracking-[0.2em] text-slate-400">Total Remaining</div>
-                <div className="mt-3 text-6xl font-bold tabular-nums md:text-8xl">{formatTime(remainingTotal)}</div>
+              <div className={`rounded-3xl px-6 py-8 text-center text-white shadow-inner ${isOvertime ? "bg-red-700" : "bg-slate-900"}`}>
+                {isOvertime ? (
+                  <>
+                    <div className="flex items-center justify-center gap-2 text-sm uppercase tracking-[0.2em] text-red-200">
+                      <AlertTriangle className="h-4 w-4" />
+                      <span>Overtime</span>
+                    </div>
+                    <div className="mt-3 text-6xl font-bold tabular-nums md:text-8xl">+{formatTime(overtimeSeconds)}</div>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-sm uppercase tracking-[0.2em] text-slate-400">Total Remaining</div>
+                    <div className="mt-3 text-6xl font-bold tabular-nums md:text-8xl">{formatTime(remainingTotal)}</div>
+                  </>
+                )}
               </div>
 
               <div className="space-y-3">
@@ -189,25 +200,40 @@ function JuryTimerApp() {
                 <Progress value={Math.min(totalProgress, 100)} className="h-3" />
               </div>
 
-              <div className="rounded-2xl bg-slate-50 p-5 ring-1 ring-slate-200">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <div className="text-sm uppercase tracking-wide text-slate-500">Current Segment</div>
-                    <div className="mt-1 text-2xl font-semibold text-slate-900">{subjectLabels[currentStageIndex]}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-sm text-slate-500">Segment Remaining</div>
-                    <div className="text-3xl font-bold tabular-nums text-slate-900">{formatTime(stageRemaining)}</div>
+              {isOvertime ? (
+                <div className="rounded-2xl bg-red-50 p-5 ring-1 ring-red-200">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <div className="text-sm uppercase tracking-wide text-red-500">Time&rsquo;s Up</div>
+                      <div className="mt-1 text-2xl font-semibold text-red-700">Overtime</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm text-red-500">Extra Time</div>
+                      <div className="text-3xl font-bold tabular-nums text-red-700">+{formatTime(overtimeSeconds)}</div>
+                    </div>
                   </div>
                 </div>
-                <div className="mt-4 space-y-2">
-                  <div className="flex items-center justify-between text-sm text-slate-600">
-                    <span>Segment Progress</span>
-                    <span>{Math.min(Math.round(stageProgress), 100)}%</span>
+              ) : (
+                <div className="rounded-2xl bg-slate-50 p-5 ring-1 ring-slate-200">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <div className="text-sm uppercase tracking-wide text-slate-500">Current Segment</div>
+                      <div className="mt-1 text-2xl font-semibold text-slate-900">{subjectLabels[currentStageIndex]}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm text-slate-500">Segment Remaining</div>
+                      <div className="text-3xl font-bold tabular-nums text-slate-900">{formatTime(stageRemaining)}</div>
+                    </div>
                   </div>
-                  <Progress value={Math.min(stageProgress, 100)} className="h-2" />
+                  <div className="mt-4 space-y-2">
+                    <div className="flex items-center justify-between text-sm text-slate-600">
+                      <span>Segment Progress</span>
+                      <span>{Math.min(Math.round(stageProgress), 100)}%</span>
+                    </div>
+                    <Progress value={Math.min(stageProgress, 100)} className="h-2" />
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="flex flex-wrap gap-3">
                 {!isRunning ? (
@@ -237,7 +263,7 @@ function JuryTimerApp() {
               </div>
 
               <div className="rounded-2xl border border-dashed border-slate-300 p-4 text-sm text-slate-600">
-                One click starts the full 14-minute cycle. The app beeps once after each 3-minute subject segment and gives a triple beep when the full timer ends.
+                One click starts the full 14-minute cycle. The app beeps once after each 3-minute subject segment and gives a triple beep when time is up. The timer continues counting overtime so students can see how much extra time was used.
               </div>
             </CardContent>
           </Card>
@@ -281,6 +307,21 @@ function JuryTimerApp() {
                   );
                 })}
               </div>
+
+              {isOvertime && (
+                <div className="mt-3 rounded-2xl bg-red-700 p-4 text-white ring-1 ring-red-700">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2 font-semibold">
+                        <AlertTriangle className="h-4 w-4" />
+                        Overtime
+                      </div>
+                      <div className="text-sm text-red-200">Extra time used</div>
+                    </div>
+                    <div className="text-2xl font-bold tabular-nums">+{formatTime(overtimeSeconds)}</div>
+                  </div>
+                </div>
+              )}
 
               <div className="mt-6 rounded-2xl bg-slate-50 p-4 text-sm text-slate-600 ring-1 ring-slate-200">
                 Suggested subject flow:<br />
