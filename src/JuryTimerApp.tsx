@@ -12,6 +12,7 @@ import {
   User,
   Settings,
   ChevronRight,
+  Square,
 } from "lucide-react";
 
 /* ── constants ─────────────────────────────────────────── */
@@ -27,7 +28,7 @@ const segmentLabels = [
   "Feedback",
 ];
 
-type Phase = "idle" | "setup" | "presenting" | "paused";
+type Phase = "idle" | "setup" | "presenting" | "paused" | "finished";
 
 /* ── helpers ───────────────────────────────────────────── */
 function fmt(s: number) {
@@ -49,6 +50,7 @@ export default function JuryTimerApp() {
 
   const [setupStartTime, setSetupStartTime] = useState<Date | null>(null);
   const [presentationStartTime, setPresentationStartTime] = useState<Date | null>(null);
+  const [endTime, setEndTime] = useState<Date | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
 
   const tick = useRef<number | null>(null);
@@ -170,6 +172,12 @@ export default function JuryTimerApp() {
 
   const resume = () => setPhase("presenting");
 
+  const finish = () => {
+    setEndTime(new Date());
+    beep(1100, 260, 2);
+    setPhase("finished");
+  };
+
   const reset = () => {
     setPhase("idle");
     setStudentName("");
@@ -177,6 +185,7 @@ export default function JuryTimerApp() {
     setElapsed(0);
     setSetupStartTime(null);
     setPresentationStartTime(null);
+    setEndTime(null);
     lastCue.current = -1;
   };
 
@@ -259,11 +268,21 @@ export default function JuryTimerApp() {
           )}
 
           {/* PRESENTING / PAUSED */}
-          {(phase === "presenting" || phase === "paused") && (
+          {(phase === "presenting" || phase === "paused" || phase === "finished") && (
             <div className="flex w-full max-w-2xl flex-col items-center gap-4">
               {/* big clock */}
-              <div className={`w-full rounded-3xl px-6 py-6 text-center text-white shadow-inner md:py-10 ${isOvertime ? "bg-red-700" : "bg-slate-900"}`}>
-                {isOvertime ? (
+              <div className={`w-full rounded-3xl px-6 py-6 text-center text-white shadow-inner md:py-10 ${
+                phase === "finished" ? "bg-emerald-700" : isOvertime ? "bg-red-700" : "bg-slate-900"
+              }`}>
+                {phase === "finished" ? (
+                  <>
+                    <div className="text-xs uppercase tracking-[0.2em] text-emerald-200">Finished</div>
+                    <div className="mt-2 text-5xl font-bold tabular-nums md:text-8xl">{fmt(elapsed)}</div>
+                    {remaining > 0 && (
+                      <div className="mt-1 text-sm text-emerald-200">{fmt(remaining)} remaining &mdash; finished early</div>
+                    )}
+                  </>
+                ) : isOvertime ? (
                   <>
                     <div className="flex items-center justify-center gap-2 text-xs uppercase tracking-[0.2em] text-red-200">
                       <AlertTriangle className="h-4 w-4" />
@@ -316,25 +335,36 @@ export default function JuryTimerApp() {
 
               {/* controls */}
               <div className="flex flex-wrap gap-3">
-                {phase === "presenting" ? (
-                  <Button size="lg" variant="secondary" className="rounded-2xl px-6" onClick={pause}>
-                    <Pause className="mr-2 h-4 w-4" /> Pause
+                {phase === "finished" ? (
+                  <Button size="lg" className="rounded-2xl px-6" onClick={reset}>
+                    <RotateCcw className="mr-2 h-4 w-4" /> Next Student
                   </Button>
                 ) : (
-                  <Button size="lg" className="rounded-2xl px-6" onClick={resume}>
-                    <Play className="mr-2 h-4 w-4" /> Resume
-                  </Button>
+                  <>
+                    {phase === "presenting" ? (
+                      <Button size="lg" variant="secondary" className="rounded-2xl px-6" onClick={pause}>
+                        <Pause className="mr-2 h-4 w-4" /> Pause
+                      </Button>
+                    ) : (
+                      <Button size="lg" className="rounded-2xl px-6" onClick={resume}>
+                        <Play className="mr-2 h-4 w-4" /> Resume
+                      </Button>
+                    )}
+                    <Button size="lg" variant="outline" className="rounded-2xl border-red-200 px-6 text-red-600 hover:bg-red-50 hover:text-red-700" onClick={finish}>
+                      <Square className="mr-2 h-4 w-4" /> Finish
+                    </Button>
+                    <Button size="lg" variant="outline" className="rounded-2xl px-6" onClick={reset}>
+                      <RotateCcw className="mr-2 h-4 w-4" /> Reset
+                    </Button>
+                  </>
                 )}
-                <Button size="lg" variant="outline" className="rounded-2xl px-6" onClick={reset}>
-                  <RotateCcw className="mr-2 h-4 w-4" /> Reset
-                </Button>
               </div>
             </div>
           )}
         </section>
 
         {/* ── RIGHT: segments ────────── */}
-        {(phase === "presenting" || phase === "paused") && (
+        {(phase === "presenting" || phase === "paused" || phase === "finished") && (
           <aside className="flex shrink-0 flex-col gap-2 border-t bg-white p-4 lg:w-72 lg:border-l lg:border-t-0 lg:p-5 xl:w-80">
             <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Segments</div>
 
@@ -398,8 +428,8 @@ export default function JuryTimerApp() {
                   <span className="tabular-nums text-slate-600">{fmtClock(presentationStartTime)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-500">Now</span>
-                  <span className="tabular-nums text-slate-600">{fmtClock(currentTime)}</span>
+                  <span className="text-slate-500">{endTime ? "Ended" : "Now"}</span>
+                  <span className="tabular-nums text-slate-600">{fmtClock(endTime || currentTime)}</span>
                 </div>
                 <div className="border-t border-slate-200 pt-1" />
                 <div className="flex justify-between">
@@ -414,6 +444,12 @@ export default function JuryTimerApp() {
                   <div className="flex justify-between text-red-600">
                     <span>Overtime</span>
                     <span className="font-semibold tabular-nums">+{fmt(overtime)}</span>
+                  </div>
+                )}
+                {phase === "finished" && remaining > 0 && (
+                  <div className="flex justify-between text-emerald-600">
+                    <span>Time Saved</span>
+                    <span className="font-semibold tabular-nums">{fmt(remaining)}</span>
                   </div>
                 )}
                 <div className="border-t border-slate-200 pt-1">
