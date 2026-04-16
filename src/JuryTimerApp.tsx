@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -18,7 +19,7 @@ import {
 /* ── constants ─────────────────────────────────────────── */
 const SUBJECT_SECONDS = 3 * 60;
 const FINAL_FEEDBACK_SECONDS = 2 * 60;
-const TOTAL_SECONDS = 4 * SUBJECT_SECONDS + FINAL_FEEDBACK_SECONDS; // 14 min
+const TOTAL_SECONDS = 4 * SUBJECT_SECONDS + FINAL_FEEDBACK_SECONDS;
 
 const segmentLabels = [
   "Subject 1",
@@ -45,7 +46,7 @@ export default function JuryTimerApp() {
   const [showModal, setShowModal] = useState(false);
 
   const [setupSeconds, setSetupSeconds] = useState(0);
-  const [elapsed, setElapsed] = useState(0); // presentation elapsed
+  const [elapsed, setElapsed] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(true);
 
   const [setupStartTime, setSetupStartTime] = useState<Date | null>(null);
@@ -135,7 +136,6 @@ export default function JuryTimerApp() {
     };
   }, [phase]);
 
-  // presentation checkpoint beeps
   useEffect(() => {
     if (phase !== "presenting") return;
     const idx = checkpoints.findIndex((pt) => elapsed === pt);
@@ -169,7 +169,6 @@ export default function JuryTimerApp() {
   };
 
   const pause = () => setPhase("paused");
-
   const resume = () => setPhase("presenting");
 
   const finish = () => {
@@ -189,280 +188,333 @@ export default function JuryTimerApp() {
     lastCue.current = -1;
   };
 
+  const isActive = phase === "presenting" || phase === "paused" || phase === "finished";
+
   /* ── render ───────────────────────── */
   return (
-    <div className="flex h-dvh flex-col overflow-hidden bg-slate-100">
-      {/* ── HEADER ─────────────────────── */}
-      <header className="flex shrink-0 items-center justify-between gap-4 bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200 md:px-8 md:py-4">
-        <div className="min-w-0">
-          <div className="flex items-center gap-1.5 text-slate-500">
-            <Clock3 className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate text-xs font-medium uppercase tracking-wide">Internal Mid-Term Jury</span>
-          </div>
-          <h1 className="text-xl font-bold tracking-tight text-slate-900 md:text-3xl">Jury Timer</h1>
-        </div>
+    <div className="min-h-screen bg-slate-100 p-4 md:p-8 lg:p-10">
+      <div className="mx-auto max-w-6xl space-y-5">
 
-        <div className="flex shrink-0 items-center gap-3">
-          {studentName && (
-            <div className="flex items-center gap-2 rounded-full bg-slate-900 px-4 py-1.5 text-white">
-              <User className="h-3.5 w-3.5" />
-              <span className="max-w-[140px] truncate text-sm font-semibold md:max-w-none">{studentName}</span>
-            </div>
-          )}
-          {phase !== "idle" && setupSeconds > 0 && (
-            <div className="hidden items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1.5 text-amber-800 md:flex">
-              <Settings className="h-3.5 w-3.5" />
-              <span className="text-xs font-semibold">Setup {fmt(setupSeconds)}</span>
-            </div>
-          )}
-          <div className="hidden tabular-nums text-sm font-medium text-slate-500 md:block">
-            {fmtClock(currentTime)}
-          </div>
-          <button
-            onClick={() => setSoundEnabled((v) => !v)}
-            className={`rounded-full p-2 transition ${soundEnabled ? "text-slate-500 hover:bg-slate-100" : "bg-slate-200 text-slate-400"}`}
-          >
-            <Volume2 className="h-4 w-4" />
-          </button>
-        </div>
-      </header>
-
-      {/* ── BODY ───────────────────────── */}
-      <main className="flex min-h-0 flex-1 flex-col lg:flex-row">
-        {/* ── LEFT: timer ────────────── */}
-        <section className="flex flex-1 flex-col items-center justify-center gap-4 p-4 md:gap-6 md:p-8">
-
-          {/* IDLE */}
-          {phase === "idle" && (
-            <div className="flex flex-col items-center gap-6 text-center">
-              <div className="rounded-3xl bg-slate-900 px-10 py-8 text-white shadow-inner md:px-16 md:py-12">
-                <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Ready</div>
-                <div className="mt-2 text-5xl font-bold tabular-nums md:text-8xl">{fmt(TOTAL_SECONDS)}</div>
+        {/* ── HEADER CARD ──────────────── */}
+        <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200 md:p-7">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="flex items-center gap-1.5 text-slate-500">
+                <Clock3 className="h-3.5 w-3.5" />
+                <span className="text-xs font-medium uppercase tracking-wide">Internal Mid-Term Jury</span>
               </div>
-              <p className="max-w-sm text-sm text-slate-500">
-                Communication Design &bull; Semester 06 &bull; 14 minutes per student
+              <h1 className="text-2xl font-bold tracking-tight text-slate-900 md:text-4xl">Jury Timer</h1>
+              <p className="mt-1 text-sm text-slate-500">
+                Communication Design &bull; Semester 06 &bull; 14 min per student
               </p>
-              <Button size="lg" className="rounded-2xl px-8 text-base" onClick={openModal}>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {studentName && (
+                <div className="flex items-center gap-2 rounded-full bg-slate-900 px-4 py-1.5 text-white">
+                  <User className="h-3.5 w-3.5" />
+                  <span className="text-sm font-semibold">{studentName}</span>
+                </div>
+              )}
+              {phase !== "idle" && setupSeconds > 0 && (
+                <div className="flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1.5 text-amber-800">
+                  <Settings className="h-3.5 w-3.5" />
+                  <span className="text-xs font-semibold">Setup {fmt(setupSeconds)}</span>
+                </div>
+              )}
+              <div className="tabular-nums text-sm font-medium text-slate-400">
+                {fmtClock(currentTime)}
+              </div>
+              <button
+                onClick={() => setSoundEnabled((v) => !v)}
+                className={`rounded-full p-2 transition ${soundEnabled ? "text-slate-500 hover:bg-slate-100" : "bg-slate-200 text-slate-400"}`}
+              >
+                <Volume2 className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* ── IDLE STATE ───────────────── */}
+        {phase === "idle" && (
+          <Card className="rounded-3xl border-0 shadow-sm">
+            <CardContent className="flex flex-col items-center gap-6 py-16 text-center">
+              <div className="rounded-3xl bg-slate-900 px-12 py-10 text-white shadow-inner md:px-20 md:py-14">
+                <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Ready</div>
+                <div className="mt-2 text-6xl font-bold tabular-nums md:text-8xl">{fmt(TOTAL_SECONDS)}</div>
+              </div>
+              <div className="flex flex-wrap justify-center gap-2">
+                <Badge className="rounded-full px-4 py-1 text-sm">4 Subjects &times; 3 min</Badge>
+                <Badge variant="secondary" className="rounded-full px-4 py-1 text-sm">Final Feedback 2 min</Badge>
+              </div>
+              <Button size="lg" className="rounded-2xl px-10 text-base" onClick={openModal}>
                 <Play className="mr-2 h-5 w-5" />
                 Next Student
               </Button>
-            </div>
-          )}
+            </CardContent>
+          </Card>
+        )}
 
-          {/* SETUP */}
-          {phase === "setup" && (
-            <div className="flex flex-col items-center gap-5 text-center">
-              <div className="rounded-3xl bg-amber-500 px-10 py-8 text-white shadow-inner md:px-16 md:py-12">
+        {/* ── SETUP STATE ──────────────── */}
+        {phase === "setup" && (
+          <Card className="rounded-3xl border-0 shadow-sm">
+            <CardContent className="flex flex-col items-center gap-6 py-16 text-center">
+              <div className="rounded-3xl bg-amber-500 px-12 py-10 text-white shadow-inner md:px-20 md:py-14">
                 <div className="flex items-center justify-center gap-2 text-xs uppercase tracking-[0.2em] text-amber-100">
                   <Settings className="h-4 w-4 animate-spin" style={{ animationDuration: "3s" }} />
                   <span>Setting Up</span>
                 </div>
-                <div className="mt-2 text-5xl font-bold tabular-nums md:text-8xl">{fmt(setupSeconds)}</div>
+                <div className="mt-2 text-6xl font-bold tabular-nums md:text-8xl">{fmt(setupSeconds)}</div>
               </div>
-              <p className="text-sm text-slate-500">Student is setting up. Click below when ready to present.</p>
-              <Button size="lg" className="rounded-2xl bg-emerald-600 px-8 text-base hover:bg-emerald-700" onClick={startPresentation}>
+              <p className="max-w-md text-slate-500">
+                <strong>{studentName}</strong> is setting up. Click below when ready to present.
+              </p>
+              <Button size="lg" className="rounded-2xl bg-emerald-600 px-10 text-base hover:bg-emerald-700" onClick={startPresentation}>
                 <ChevronRight className="mr-2 h-5 w-5" />
                 Start Presentation
               </Button>
-            </div>
-          )}
-
-          {/* PRESENTING / PAUSED */}
-          {(phase === "presenting" || phase === "paused" || phase === "finished") && (
-            <div className="flex w-full max-w-2xl flex-col items-center gap-4">
-              {/* big clock */}
-              <div className={`w-full rounded-3xl px-6 py-6 text-center text-white shadow-inner md:py-10 ${
-                phase === "finished" ? "bg-emerald-700" : isOvertime ? "bg-red-700" : "bg-slate-900"
-              }`}>
-                {phase === "finished" ? (
-                  <>
-                    <div className="text-xs uppercase tracking-[0.2em] text-emerald-200">Finished</div>
-                    <div className="mt-2 text-5xl font-bold tabular-nums md:text-8xl">{fmt(elapsed)}</div>
-                    {remaining > 0 && (
-                      <div className="mt-1 text-sm text-emerald-200">{fmt(remaining)} remaining &mdash; finished early</div>
-                    )}
-                  </>
-                ) : isOvertime ? (
-                  <>
-                    <div className="flex items-center justify-center gap-2 text-xs uppercase tracking-[0.2em] text-red-200">
-                      <AlertTriangle className="h-4 w-4" />
-                      <span>Overtime</span>
-                    </div>
-                    <div className="mt-2 text-5xl font-bold tabular-nums md:text-8xl">+{fmt(overtime)}</div>
-                  </>
-                ) : (
-                  <>
-                    <div className="text-xs uppercase tracking-[0.2em] text-slate-400">
-                      {phase === "paused" ? "Paused" : "Remaining"}
-                    </div>
-                    <div className="mt-2 text-5xl font-bold tabular-nums md:text-8xl">{fmt(remaining)}</div>
-                  </>
-                )}
-              </div>
-
-              {/* progress */}
-              <div className="w-full space-y-1">
-                <div className="flex justify-between text-xs text-slate-500">
-                  <span>Total</span>
-                  <span>{Math.round(totalPct)}%</span>
-                </div>
-                <Progress value={totalPct} className="h-2" />
-              </div>
-
-              {/* current segment info */}
-              {!isOvertime && (
-                <div className="flex w-full items-center justify-between rounded-2xl bg-white p-4 ring-1 ring-slate-200">
-                  <div>
-                    <div className="text-xs uppercase text-slate-400">Segment</div>
-                    <div className="text-lg font-semibold text-slate-900">{segmentLabels[stageIdx]}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-2xl font-bold tabular-nums text-slate-900">{fmt(stageRem)}</div>
-                    <Progress value={stagePct} className="mt-1 h-1.5 w-24" />
-                  </div>
-                </div>
-              )}
-
-              {isOvertime && (
-                <div className="flex w-full items-center justify-between rounded-2xl bg-red-50 p-4 ring-1 ring-red-200">
-                  <div className="flex items-center gap-2 font-semibold text-red-700">
-                    <AlertTriangle className="h-4 w-4" />
-                    Time&rsquo;s Up
-                  </div>
-                  <div className="text-2xl font-bold tabular-nums text-red-700">+{fmt(overtime)}</div>
-                </div>
-              )}
-
-              {/* controls */}
-              <div className="flex flex-wrap gap-3">
-                {phase === "finished" ? (
-                  <Button size="lg" className="rounded-2xl px-6" onClick={reset}>
-                    <RotateCcw className="mr-2 h-4 w-4" /> Next Student
-                  </Button>
-                ) : (
-                  <>
-                    {phase === "presenting" ? (
-                      <Button size="lg" variant="secondary" className="rounded-2xl px-6" onClick={pause}>
-                        <Pause className="mr-2 h-4 w-4" /> Pause
-                      </Button>
-                    ) : (
-                      <Button size="lg" className="rounded-2xl px-6" onClick={resume}>
-                        <Play className="mr-2 h-4 w-4" /> Resume
-                      </Button>
-                    )}
-                    <Button size="lg" variant="outline" className="rounded-2xl border-red-200 px-6 text-red-600 hover:bg-red-50 hover:text-red-700" onClick={finish}>
-                      <Square className="mr-2 h-4 w-4" /> Finish
-                    </Button>
-                    <Button size="lg" variant="outline" className="rounded-2xl px-6" onClick={reset}>
-                      <RotateCcw className="mr-2 h-4 w-4" /> Reset
-                    </Button>
-                  </>
-                )}
-              </div>
-            </div>
-          )}
-        </section>
-
-        {/* ── RIGHT: segments ────────── */}
-        {(phase === "presenting" || phase === "paused" || phase === "finished") && (
-          <aside className="flex shrink-0 flex-col gap-2 border-t bg-white p-4 lg:w-72 lg:border-l lg:border-t-0 lg:p-5 xl:w-80">
-            <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Segments</div>
-
-            {/* setup row */}
-            <div className="flex items-center justify-between rounded-xl bg-amber-50 px-3 py-2 ring-1 ring-amber-200">
-              <div className="flex items-center gap-2">
-                <Settings className="h-3.5 w-3.5 text-amber-600" />
-                <span className="text-sm font-medium text-amber-800">Setup</span>
-              </div>
-              <span className="text-sm font-bold tabular-nums text-amber-700">{fmt(setupSeconds)}</span>
-            </div>
-
-            {segmentLabels.map((label, i) => {
-              const isFinal = i === 4;
-              const start = isFinal ? 4 * SUBJECT_SECONDS : i * SUBJECT_SECONDS;
-              const end = isFinal ? TOTAL_SECONDS : start + SUBJECT_SECONDS;
-              const done = elapsed >= end;
-              const active = elapsed >= start && elapsed < end;
-              return (
-                <div
-                  key={label}
-                  className={`flex items-center justify-between rounded-xl px-3 py-2 ring-1 transition-all ${
-                    active
-                      ? "bg-slate-900 text-white ring-slate-900"
-                      : done
-                        ? "bg-slate-50 text-slate-400 ring-slate-200"
-                        : "bg-white text-slate-700 ring-slate-200"
-                  }`}
-                >
-                  <span className="text-sm font-medium">{label}</span>
-                  <Badge
-                    variant={active ? "secondary" : "outline"}
-                    className={`rounded-full text-xs ${done && !active ? "border-slate-200 text-slate-400" : ""}`}
-                  >
-                    {done ? "Done" : active ? "Live" : isFinal ? "2 min" : "3 min"}
-                  </Badge>
-                </div>
-              );
-            })}
-
-            {isOvertime && (
-              <div className="flex items-center justify-between rounded-xl bg-red-700 px-3 py-2 text-white ring-1 ring-red-700">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="h-3.5 w-3.5" />
-                  <span className="text-sm font-medium">Overtime</span>
-                </div>
-                <span className="text-sm font-bold tabular-nums">+{fmt(overtime)}</span>
-              </div>
-            )}
-
-            {/* report summary */}
-            <div className="mt-auto rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">
-              <div className="mb-2 text-xs font-semibold uppercase text-slate-400">Time Report</div>
-              <div className="space-y-1 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Entered</span>
-                  <span className="tabular-nums text-slate-600">{fmtClock(setupStartTime)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Started</span>
-                  <span className="tabular-nums text-slate-600">{fmtClock(presentationStartTime)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">{endTime ? "Ended" : "Now"}</span>
-                  <span className="tabular-nums text-slate-600">{fmtClock(endTime || currentTime)}</span>
-                </div>
-                <div className="border-t border-slate-200 pt-1" />
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Setup</span>
-                  <span className="font-semibold tabular-nums text-amber-700">{fmt(setupSeconds)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Presentation</span>
-                  <span className="font-semibold tabular-nums text-slate-700">{fmt(Math.min(elapsed, TOTAL_SECONDS))}</span>
-                </div>
-                {isOvertime && (
-                  <div className="flex justify-between text-red-600">
-                    <span>Overtime</span>
-                    <span className="font-semibold tabular-nums">+{fmt(overtime)}</span>
-                  </div>
-                )}
-                {phase === "finished" && remaining > 0 && (
-                  <div className="flex justify-between text-emerald-600">
-                    <span>Time Saved</span>
-                    <span className="font-semibold tabular-nums">{fmt(remaining)}</span>
-                  </div>
-                )}
-                <div className="border-t border-slate-200 pt-1">
-                  <div className="flex justify-between font-semibold">
-                    <span className="text-slate-700">Total Time</span>
-                    <span className="tabular-nums text-slate-900">{fmt(setupSeconds + elapsed)}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </aside>
+            </CardContent>
+          </Card>
         )}
-      </main>
+
+        {/* ── PRESENTING / PAUSED / FINISHED ── */}
+        {isActive && (
+          <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
+            {/* ── LEFT: Live Timer ────── */}
+            <Card className="rounded-3xl border-0 shadow-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg md:text-xl">Live Timer</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                {/* big clock */}
+                <div className={`rounded-3xl px-6 py-7 text-center text-white shadow-inner md:py-10 ${
+                  phase === "finished"
+                    ? "bg-emerald-700"
+                    : isOvertime
+                      ? "bg-red-700"
+                      : "bg-slate-900"
+                }`}>
+                  {phase === "finished" ? (
+                    <>
+                      <div className="text-xs uppercase tracking-[0.2em] text-emerald-200">Finished</div>
+                      <div className="mt-2 text-5xl font-bold tabular-nums md:text-7xl">{fmt(elapsed)}</div>
+                      {remaining > 0 && (
+                        <div className="mt-1 text-sm text-emerald-200">{fmt(remaining)} remaining &mdash; finished early</div>
+                      )}
+                    </>
+                  ) : isOvertime ? (
+                    <>
+                      <div className="flex items-center justify-center gap-2 text-xs uppercase tracking-[0.2em] text-red-200">
+                        <AlertTriangle className="h-4 w-4" />
+                        <span>Overtime</span>
+                      </div>
+                      <div className="mt-2 text-5xl font-bold tabular-nums md:text-7xl">+{fmt(overtime)}</div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                        {phase === "paused" ? "Paused" : "Total Remaining"}
+                      </div>
+                      <div className="mt-2 text-5xl font-bold tabular-nums md:text-7xl">{fmt(remaining)}</div>
+                    </>
+                  )}
+                </div>
+
+                {/* progress */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs text-slate-500">
+                    <span>Total Progress</span>
+                    <span>{Math.round(totalPct)}%</span>
+                  </div>
+                  <Progress value={totalPct} className="h-2.5" />
+                </div>
+
+                {/* current segment */}
+                {!isOvertime && phase !== "finished" && (
+                  <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <div className="text-xs uppercase tracking-wide text-slate-400">Current Segment</div>
+                        <div className="mt-1 text-xl font-semibold text-slate-900">{segmentLabels[stageIdx]}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xs text-slate-400">Remaining</div>
+                        <div className="text-2xl font-bold tabular-nums text-slate-900">{fmt(stageRem)}</div>
+                      </div>
+                    </div>
+                    <div className="mt-3 space-y-1">
+                      <div className="flex justify-between text-xs text-slate-500">
+                        <span>Segment Progress</span>
+                        <span>{Math.round(stagePct)}%</span>
+                      </div>
+                      <Progress value={stagePct} className="h-1.5" />
+                    </div>
+                  </div>
+                )}
+
+                {isOvertime && phase !== "finished" && (
+                  <div className="rounded-2xl bg-red-50 p-4 ring-1 ring-red-200">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-2 font-semibold text-red-700">
+                        <AlertTriangle className="h-4 w-4" />
+                        Time&rsquo;s Up
+                      </div>
+                      <div className="text-2xl font-bold tabular-nums text-red-700">+{fmt(overtime)}</div>
+                    </div>
+                  </div>
+                )}
+
+                {/* controls */}
+                <div className="flex flex-wrap gap-3 pt-1">
+                  {phase === "finished" ? (
+                    <Button size="lg" className="rounded-2xl px-8" onClick={reset}>
+                      <RotateCcw className="mr-2 h-4 w-4" /> Next Student
+                    </Button>
+                  ) : (
+                    <>
+                      {phase === "presenting" ? (
+                        <Button size="lg" variant="secondary" className="rounded-2xl px-6" onClick={pause}>
+                          <Pause className="mr-2 h-4 w-4" /> Pause
+                        </Button>
+                      ) : (
+                        <Button size="lg" className="rounded-2xl px-6" onClick={resume}>
+                          <Play className="mr-2 h-4 w-4" /> Resume
+                        </Button>
+                      )}
+                      <Button
+                        size="lg"
+                        variant="outline"
+                        className="rounded-2xl border-red-200 px-6 text-red-600 hover:bg-red-50 hover:text-red-700"
+                        onClick={finish}
+                      >
+                        <Square className="mr-2 h-4 w-4" /> Finish
+                      </Button>
+                      <Button size="lg" variant="outline" className="rounded-2xl px-6" onClick={reset}>
+                        <RotateCcw className="mr-2 h-4 w-4" /> Reset
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* ── RIGHT: Segments + Report ── */}
+            <div className="space-y-5">
+              <Card className="rounded-3xl border-0 shadow-sm">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg md:text-xl">Segment Plan</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2.5">
+                  {/* setup row */}
+                  <div className="flex items-center justify-between rounded-2xl bg-amber-50 px-4 py-3 ring-1 ring-amber-200">
+                    <div className="flex items-center gap-2">
+                      <Settings className="h-3.5 w-3.5 text-amber-600" />
+                      <span className="text-sm font-medium text-amber-800">Setup</span>
+                    </div>
+                    <span className="text-sm font-bold tabular-nums text-amber-700">{fmt(setupSeconds)}</span>
+                  </div>
+
+                  {segmentLabels.map((label, i) => {
+                    const isFinal = i === 4;
+                    const start = isFinal ? 4 * SUBJECT_SECONDS : i * SUBJECT_SECONDS;
+                    const end = isFinal ? TOTAL_SECONDS : start + SUBJECT_SECONDS;
+                    const done = elapsed >= end;
+                    const active = elapsed >= start && elapsed < end && phase !== "finished";
+                    return (
+                      <div
+                        key={label}
+                        className={`flex items-center justify-between rounded-2xl px-4 py-3 ring-1 transition-all ${
+                          active
+                            ? "bg-slate-900 text-white ring-slate-900"
+                            : done
+                              ? "bg-slate-100 text-slate-400 ring-slate-200"
+                              : "bg-white text-slate-700 ring-slate-200"
+                        }`}
+                      >
+                        <div>
+                          <div className="text-sm font-semibold">{label}</div>
+                          <div className={`text-xs ${active ? "text-slate-300" : "text-slate-400"}`}>
+                            {isFinal ? "2 minutes" : "3 minutes"}
+                          </div>
+                        </div>
+                        <Badge
+                          variant={active ? "secondary" : "outline"}
+                          className={`rounded-full ${done && !active ? "border-slate-200 text-slate-400" : ""}`}
+                        >
+                          {done ? "Done" : active ? "Live" : "Pending"}
+                        </Badge>
+                      </div>
+                    );
+                  })}
+
+                  {isOvertime && (
+                    <div className="flex items-center justify-between rounded-2xl bg-red-700 px-4 py-3 text-white ring-1 ring-red-700">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                        <span className="text-sm font-semibold">Overtime</span>
+                      </div>
+                      <span className="text-sm font-bold tabular-nums">+{fmt(overtime)}</span>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* ── Time Report ────────── */}
+              <Card className="rounded-3xl border-0 shadow-sm">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg md:text-xl">Time Report</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Entered</span>
+                      <span className="tabular-nums font-medium text-slate-700">{fmtClock(setupStartTime)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Presented</span>
+                      <span className="tabular-nums font-medium text-slate-700">{fmtClock(presentationStartTime)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">{endTime ? "Ended" : "Now"}</span>
+                      <span className="tabular-nums font-medium text-slate-700">{fmtClock(endTime || currentTime)}</span>
+                    </div>
+
+                    <div className="border-t border-slate-200" />
+
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Setup Time</span>
+                      <span className="font-semibold tabular-nums text-amber-700">{fmt(setupSeconds)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Presentation</span>
+                      <span className="font-semibold tabular-nums text-slate-700">{fmt(Math.min(elapsed, TOTAL_SECONDS))}</span>
+                    </div>
+                    {isOvertime && (
+                      <div className="flex justify-between text-red-600">
+                        <span>Overtime</span>
+                        <span className="font-semibold tabular-nums">+{fmt(overtime)}</span>
+                      </div>
+                    )}
+                    {phase === "finished" && remaining > 0 && (
+                      <div className="flex justify-between text-emerald-600">
+                        <span>Time Saved</span>
+                        <span className="font-semibold tabular-nums">{fmt(remaining)}</span>
+                      </div>
+                    )}
+
+                    <div className="border-t border-slate-200" />
+
+                    <div className="flex justify-between text-base font-bold">
+                      <span className="text-slate-800">Total Time</span>
+                      <span className="tabular-nums text-slate-900">{fmt(setupSeconds + elapsed)}</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* ── NAME MODAL ─────────────────── */}
       {showModal && (
