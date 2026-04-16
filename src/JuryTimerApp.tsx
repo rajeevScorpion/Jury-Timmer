@@ -1,53 +1,68 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Play, Pause, RotateCcw, Volume2, Clock3, AlertTriangle, User } from "lucide-react";
+import {
+  Play,
+  Pause,
+  RotateCcw,
+  Volume2,
+  Clock3,
+  AlertTriangle,
+  User,
+  Settings,
+  ChevronRight,
+} from "lucide-react";
 
-const SUBJECT_COUNT = 4;
-const SUBJECT_SECONDS = 3 * 60; // 3 min each
-const FINAL_FEEDBACK_SECONDS = 2 * 60; // 2 min
-const TOTAL_SECONDS = SUBJECT_COUNT * SUBJECT_SECONDS + FINAL_FEEDBACK_SECONDS; // 14 min
+/* ── constants ─────────────────────────────────────────── */
+const SUBJECT_SECONDS = 3 * 60;
+const FINAL_FEEDBACK_SECONDS = 2 * 60;
+const TOTAL_SECONDS = 4 * SUBJECT_SECONDS + FINAL_FEEDBACK_SECONDS; // 14 min
 
-const subjectLabels = [
+const segmentLabels = [
   "Subject 1",
   "Subject 2",
   "Subject 3",
   "Subject 4",
-  "Final Feedback",
+  "Feedback",
 ];
 
-function formatTime(totalSeconds: number) {
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+type Phase = "idle" | "setup" | "presenting" | "paused";
+
+/* ── helpers ───────────────────────────────────────────── */
+function fmt(s: number) {
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 }
 
-function JuryTimerApp() {
-  const [elapsed, setElapsed] = useState(0);
-  const [isRunning, setIsRunning] = useState(false);
-  const [soundEnabled, setSoundEnabled] = useState(true);
+/* ── component ─────────────────────────────────────────── */
+export default function JuryTimerApp() {
+  const [phase, setPhase] = useState<Phase>("idle");
   const [studentName, setStudentName] = useState("");
-  const [showNameModal, setShowNameModal] = useState(false);
   const [nameInput, setNameInput] = useState("");
-  const intervalRef = useRef<number | null>(null);
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const lastCueRef = useRef(-1);
-  const nameInputRef = useRef<HTMLInputElement | null>(null);
+  const [showModal, setShowModal] = useState(false);
 
-  const checkpoints = useMemo(
-    () => [
-      SUBJECT_SECONDS,
-      SUBJECT_SECONDS * 2,
-      SUBJECT_SECONDS * 3,
-      SUBJECT_SECONDS * 4,
-      TOTAL_SECONDS,
-    ],
-    []
-  );
+  const [setupSeconds, setSetupSeconds] = useState(0);
+  const [elapsed, setElapsed] = useState(0); // presentation elapsed
+  const [soundEnabled, setSoundEnabled] = useState(true);
 
-  const currentStageIndex = useMemo(() => {
+  const [setupStartTime, setSetupStartTime] = useState<Date | null>(null);
+  const [presentationStartTime, setPresentationStartTime] = useState<Date | null>(null);
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  const tick = useRef<number | null>(null);
+  const audioCtx = useRef<AudioContext | null>(null);
+  const lastCue = useRef(-1);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  /* ── derived ──────────────────────── */
+  const isOvertime = elapsed > TOTAL_SECONDS;
+  const overtime = Math.max(elapsed - TOTAL_SECONDS, 0);
+  const remaining = Math.max(TOTAL_SECONDS - elapsed, 0);
+  const totalPct = Math.min((elapsed / TOTAL_SECONDS) * 100, 100);
+
+  const stageIdx = useMemo(() => {
     if (elapsed >= TOTAL_SECONDS) return 4;
     if (elapsed < SUBJECT_SECONDS) return 0;
     if (elapsed < SUBJECT_SECONDS * 2) return 1;
@@ -56,325 +71,377 @@ function JuryTimerApp() {
     return 4;
   }, [elapsed]);
 
-  const remainingTotal = Math.max(TOTAL_SECONDS - elapsed, 0);
+  const stageStart = stageIdx < 4 ? stageIdx * SUBJECT_SECONDS : 4 * SUBJECT_SECONDS;
+  const stageDur = stageIdx < 4 ? SUBJECT_SECONDS : FINAL_FEEDBACK_SECONDS;
+  const stageElapsed = Math.min(Math.max(elapsed - stageStart, 0), stageDur);
+  const stageRem = Math.max(stageDur - stageElapsed, 0);
+  const stagePct = Math.min((stageElapsed / stageDur) * 100, 100);
 
-  const stageStart = currentStageIndex < 4 ? currentStageIndex * SUBJECT_SECONDS : SUBJECT_SECONDS * 4;
-  const stageDuration = currentStageIndex < 4 ? SUBJECT_SECONDS : FINAL_FEEDBACK_SECONDS;
-  const stageElapsed = Math.min(Math.max(elapsed - stageStart, 0), stageDuration);
-  const stageRemaining = Math.max(stageDuration - stageElapsed, 0);
+  const checkpoints = useMemo(
+    () => [SUBJECT_SECONDS, SUBJECT_SECONDS * 2, SUBJECT_SECONDS * 3, SUBJECT_SECONDS * 4, TOTAL_SECONDS],
+    [],
+  );
 
-  const totalProgress = (elapsed / TOTAL_SECONDS) * 100;
-  const stageProgress = (stageElapsed / stageDuration) * 100;
+  /* ── audio ────────────────────────── */
+  const ensureAudio = async () => {
+    const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!Ctx) return;
+    if (!audioCtx.current) audioCtx.current = new Ctx();
+    if (audioCtx.current.state === "suspended") await audioCtx.current.resume();
+  };
 
-  const beep = (frequency = 880, duration = 250, repeat = 1) => {
-    if (!soundEnabled) return;
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-    if (!AudioCtx) return;
-
-    if (!audioCtxRef.current) {
-      audioCtxRef.current = new AudioCtx();
-    }
-
-    const ctx = audioCtxRef.current;
-    if (ctx.state === "suspended") {
-      ctx.resume();
-    }
-
+  const beep = (freq = 880, dur = 250, repeat = 1) => {
+    if (!soundEnabled || !audioCtx.current) return;
+    const ctx = audioCtx.current;
+    if (ctx.state === "suspended") ctx.resume();
     for (let i = 0; i < repeat; i++) {
-      const oscillator = ctx.createOscillator();
-      const gainNode = ctx.createGain();
-      oscillator.connect(gainNode);
-      gainNode.connect(ctx.destination);
-      oscillator.type = "sine";
-      oscillator.frequency.value = frequency;
-
-      const startAt = ctx.currentTime + i * 0.35;
-      gainNode.gain.setValueAtTime(0.0001, startAt);
-      gainNode.gain.exponentialRampToValueAtTime(0.2, startAt + 0.02);
-      gainNode.gain.exponentialRampToValueAtTime(0.0001, startAt + duration / 1000);
-
-      oscillator.start(startAt);
-      oscillator.stop(startAt + duration / 1000 + 0.03);
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      const t = ctx.currentTime + i * 0.35;
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.2, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + dur / 1000);
+      osc.start(t);
+      osc.stop(t + dur / 1000 + 0.03);
     }
   };
 
-  const isOvertime = elapsed > TOTAL_SECONDS;
-  const overtimeSeconds = Math.max(elapsed - TOTAL_SECONDS, 0);
-
+  /* ── real-time clock ───────────────── */
   useEffect(() => {
-    if (isRunning) {
-      intervalRef.current = window.setInterval(() => {
-        setElapsed((prev) => prev + 1);
-      }, 1000);
-    }
+    const id = window.setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
 
+  const fmtClock = (d: Date | null) => {
+    if (!d) return "--:--";
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  };
+
+  /* ── tick effects ─────────────────── */
+  useEffect(() => {
+    if (phase === "setup") {
+      tick.current = window.setInterval(() => setSetupSeconds((p) => p + 1), 1000);
+    } else if (phase === "presenting") {
+      tick.current = window.setInterval(() => setElapsed((p) => p + 1), 1000);
+    }
     return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
+      if (tick.current) { clearInterval(tick.current); tick.current = null; }
     };
-  }, [isRunning]);
+  }, [phase]);
 
+  // presentation checkpoint beeps
   useEffect(() => {
-    const hitIndex = checkpoints.findIndex((point) => elapsed === point);
-    if (hitIndex !== -1 && lastCueRef.current !== hitIndex) {
-      lastCueRef.current = hitIndex;
-      if (hitIndex < 4) {
-        beep(880, 220, 1);
-      } else {
-        beep(1100, 260, 3);
-      }
+    if (phase !== "presenting") return;
+    const idx = checkpoints.findIndex((pt) => elapsed === pt);
+    if (idx !== -1 && lastCue.current !== idx) {
+      lastCue.current = idx;
+      if (idx < 4) beep(880, 220, 1);
+      else beep(1100, 260, 3);
     }
-  }, [elapsed, checkpoints]);
+  }, [elapsed, phase, checkpoints]);
 
-  const handleStartClick = () => {
-    if (elapsed > 0) {
-      // Resume — no modal needed
-      resumeTimer();
-      return;
-    }
+  /* ── actions ──────────────────────── */
+  const openModal = () => {
     setNameInput("");
-    setShowNameModal(true);
-    setTimeout(() => nameInputRef.current?.focus(), 50);
+    setShowModal(true);
+    setTimeout(() => inputRef.current?.focus(), 50);
   };
 
-  const handleNameSubmit = () => {
+  const submitName = async () => {
+    if (!nameInput.trim()) return;
     setStudentName(nameInput.trim());
-    setShowNameModal(false);
-    resumeTimer();
+    setShowModal(false);
+    await ensureAudio();
+    setSetupStartTime(new Date());
+    setPhase("setup");
   };
 
-  const resumeTimer = async () => {
-    try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      if (AudioCtx && !audioCtxRef.current) {
-        audioCtxRef.current = new AudioCtx();
-      }
-      if (audioCtxRef.current?.state === "suspended") {
-        await audioCtxRef.current.resume();
-      }
-      setIsRunning(true);
-    } catch {
-      setIsRunning(true);
-    }
+  const startPresentation = () => {
+    beep(660, 200, 2);
+    setPresentationStartTime(new Date());
+    setPhase("presenting");
   };
 
-  const pauseTimer = () => setIsRunning(false);
+  const pause = () => setPhase("paused");
 
-  const resetTimer = () => {
-    setIsRunning(false);
-    setElapsed(0);
+  const resume = () => setPhase("presenting");
+
+  const reset = () => {
+    setPhase("idle");
     setStudentName("");
-    lastCueRef.current = -1;
+    setSetupSeconds(0);
+    setElapsed(0);
+    setSetupStartTime(null);
+    setPresentationStartTime(null);
+    lastCue.current = -1;
   };
 
+  /* ── render ───────────────────────── */
   return (
-    <div className="min-h-screen bg-slate-100 p-6 md:p-10">
-      <div className="mx-auto max-w-5xl space-y-6">
-        <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200 md:p-8">
-          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-            <div>
-              <div className="mb-2 flex items-center gap-2 text-slate-600">
-                <Clock3 className="h-4 w-4" />
-                <span className="text-sm font-medium tracking-wide uppercase">Internal Mid-Term Jury</span>
-              </div>
-              <h1 className="text-3xl font-bold tracking-tight text-slate-900 md:text-5xl">Jury Timer</h1>
-              <p className="mt-2 max-w-2xl text-sm text-slate-600 md:text-base">
-                Communication Design &bull; Semester 06 &bull; 14 minutes per student
-              </p>
-            </div>
-            <div className="flex flex-col items-end gap-3">
-              {studentName && (
-                <div className="flex items-center gap-2 rounded-full bg-slate-900 px-5 py-2 text-white">
-                  <User className="h-4 w-4" />
-                  <span className="text-base font-semibold">{studentName}</span>
-                </div>
-              )}
-              <div className="flex flex-wrap gap-2">
-                <Badge className="rounded-full px-4 py-1 text-sm">4 Subjects &times; 3 min</Badge>
-                <Badge variant="secondary" className="rounded-full px-4 py-1 text-sm">Final Feedback 2 min</Badge>
-              </div>
-            </div>
+    <div className="flex h-dvh flex-col overflow-hidden bg-slate-100">
+      {/* ── HEADER ─────────────────────── */}
+      <header className="flex shrink-0 items-center justify-between gap-4 bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200 md:px-8 md:py-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5 text-slate-500">
+            <Clock3 className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate text-xs font-medium uppercase tracking-wide">Internal Mid-Term Jury</span>
           </div>
+          <h1 className="text-xl font-bold tracking-tight text-slate-900 md:text-3xl">Jury Timer</h1>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-[1.3fr_0.7fr]">
-          <Card className="rounded-3xl border-0 shadow-sm">
-            <CardHeader>
-              <CardTitle className="text-xl md:text-2xl">Live Timer</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className={`rounded-3xl px-6 py-8 text-center text-white shadow-inner ${isOvertime ? "bg-red-700" : "bg-slate-900"}`}>
+        <div className="flex shrink-0 items-center gap-3">
+          {studentName && (
+            <div className="flex items-center gap-2 rounded-full bg-slate-900 px-4 py-1.5 text-white">
+              <User className="h-3.5 w-3.5" />
+              <span className="max-w-[140px] truncate text-sm font-semibold md:max-w-none">{studentName}</span>
+            </div>
+          )}
+          {phase !== "idle" && setupSeconds > 0 && (
+            <div className="hidden items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1.5 text-amber-800 md:flex">
+              <Settings className="h-3.5 w-3.5" />
+              <span className="text-xs font-semibold">Setup {fmt(setupSeconds)}</span>
+            </div>
+          )}
+          <div className="hidden tabular-nums text-sm font-medium text-slate-500 md:block">
+            {fmtClock(currentTime)}
+          </div>
+          <button
+            onClick={() => setSoundEnabled((v) => !v)}
+            className={`rounded-full p-2 transition ${soundEnabled ? "text-slate-500 hover:bg-slate-100" : "bg-slate-200 text-slate-400"}`}
+          >
+            <Volume2 className="h-4 w-4" />
+          </button>
+        </div>
+      </header>
+
+      {/* ── BODY ───────────────────────── */}
+      <main className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        {/* ── LEFT: timer ────────────── */}
+        <section className="flex flex-1 flex-col items-center justify-center gap-4 p-4 md:gap-6 md:p-8">
+
+          {/* IDLE */}
+          {phase === "idle" && (
+            <div className="flex flex-col items-center gap-6 text-center">
+              <div className="rounded-3xl bg-slate-900 px-10 py-8 text-white shadow-inner md:px-16 md:py-12">
+                <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Ready</div>
+                <div className="mt-2 text-5xl font-bold tabular-nums md:text-8xl">{fmt(TOTAL_SECONDS)}</div>
+              </div>
+              <p className="max-w-sm text-sm text-slate-500">
+                Communication Design &bull; Semester 06 &bull; 14 minutes per student
+              </p>
+              <Button size="lg" className="rounded-2xl px-8 text-base" onClick={openModal}>
+                <Play className="mr-2 h-5 w-5" />
+                Next Student
+              </Button>
+            </div>
+          )}
+
+          {/* SETUP */}
+          {phase === "setup" && (
+            <div className="flex flex-col items-center gap-5 text-center">
+              <div className="rounded-3xl bg-amber-500 px-10 py-8 text-white shadow-inner md:px-16 md:py-12">
+                <div className="flex items-center justify-center gap-2 text-xs uppercase tracking-[0.2em] text-amber-100">
+                  <Settings className="h-4 w-4 animate-spin" style={{ animationDuration: "3s" }} />
+                  <span>Setting Up</span>
+                </div>
+                <div className="mt-2 text-5xl font-bold tabular-nums md:text-8xl">{fmt(setupSeconds)}</div>
+              </div>
+              <p className="text-sm text-slate-500">Student is setting up. Click below when ready to present.</p>
+              <Button size="lg" className="rounded-2xl bg-emerald-600 px-8 text-base hover:bg-emerald-700" onClick={startPresentation}>
+                <ChevronRight className="mr-2 h-5 w-5" />
+                Start Presentation
+              </Button>
+            </div>
+          )}
+
+          {/* PRESENTING / PAUSED */}
+          {(phase === "presenting" || phase === "paused") && (
+            <div className="flex w-full max-w-2xl flex-col items-center gap-4">
+              {/* big clock */}
+              <div className={`w-full rounded-3xl px-6 py-6 text-center text-white shadow-inner md:py-10 ${isOvertime ? "bg-red-700" : "bg-slate-900"}`}>
                 {isOvertime ? (
                   <>
-                    <div className="flex items-center justify-center gap-2 text-sm uppercase tracking-[0.2em] text-red-200">
+                    <div className="flex items-center justify-center gap-2 text-xs uppercase tracking-[0.2em] text-red-200">
                       <AlertTriangle className="h-4 w-4" />
                       <span>Overtime</span>
                     </div>
-                    <div className="mt-3 text-6xl font-bold tabular-nums md:text-8xl">+{formatTime(overtimeSeconds)}</div>
+                    <div className="mt-2 text-5xl font-bold tabular-nums md:text-8xl">+{fmt(overtime)}</div>
                   </>
                 ) : (
                   <>
-                    <div className="text-sm uppercase tracking-[0.2em] text-slate-400">Total Remaining</div>
-                    <div className="mt-3 text-6xl font-bold tabular-nums md:text-8xl">{formatTime(remainingTotal)}</div>
+                    <div className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                      {phase === "paused" ? "Paused" : "Remaining"}
+                    </div>
+                    <div className="mt-2 text-5xl font-bold tabular-nums md:text-8xl">{fmt(remaining)}</div>
                   </>
                 )}
               </div>
 
-              <div className="space-y-3">
-                <div className="flex items-center justify-between text-sm text-slate-600">
-                  <span>Total Progress</span>
-                  <span>{Math.min(Math.round(totalProgress), 100)}%</span>
+              {/* progress */}
+              <div className="w-full space-y-1">
+                <div className="flex justify-between text-xs text-slate-500">
+                  <span>Total</span>
+                  <span>{Math.round(totalPct)}%</span>
                 </div>
-                <Progress value={Math.min(totalProgress, 100)} className="h-3" />
+                <Progress value={totalPct} className="h-2" />
               </div>
 
-              {isOvertime ? (
-                <div className="rounded-2xl bg-red-50 p-5 ring-1 ring-red-200">
-                  <div className="flex items-center justify-between gap-4">
-                    <div>
-                      <div className="text-sm uppercase tracking-wide text-red-500">Time&rsquo;s Up</div>
-                      <div className="mt-1 text-2xl font-semibold text-red-700">Overtime</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-sm text-red-500">Extra Time</div>
-                      <div className="text-3xl font-bold tabular-nums text-red-700">+{formatTime(overtimeSeconds)}</div>
-                    </div>
+              {/* current segment info */}
+              {!isOvertime && (
+                <div className="flex w-full items-center justify-between rounded-2xl bg-white p-4 ring-1 ring-slate-200">
+                  <div>
+                    <div className="text-xs uppercase text-slate-400">Segment</div>
+                    <div className="text-lg font-semibold text-slate-900">{segmentLabels[stageIdx]}</div>
                   </div>
-                </div>
-              ) : (
-                <div className="rounded-2xl bg-slate-50 p-5 ring-1 ring-slate-200">
-                  <div className="flex items-center justify-between gap-4">
-                    <div>
-                      <div className="text-sm uppercase tracking-wide text-slate-500">Current Segment</div>
-                      <div className="mt-1 text-2xl font-semibold text-slate-900">{subjectLabels[currentStageIndex]}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-sm text-slate-500">Segment Remaining</div>
-                      <div className="text-3xl font-bold tabular-nums text-slate-900">{formatTime(stageRemaining)}</div>
-                    </div>
-                  </div>
-                  <div className="mt-4 space-y-2">
-                    <div className="flex items-center justify-between text-sm text-slate-600">
-                      <span>Segment Progress</span>
-                      <span>{Math.min(Math.round(stageProgress), 100)}%</span>
-                    </div>
-                    <Progress value={Math.min(stageProgress, 100)} className="h-2" />
+                  <div className="text-right">
+                    <div className="text-2xl font-bold tabular-nums text-slate-900">{fmt(stageRem)}</div>
+                    <Progress value={stagePct} className="mt-1 h-1.5 w-24" />
                   </div>
                 </div>
               )}
-
-              <div className="flex flex-wrap gap-3">
-                {!isRunning ? (
-                  <Button size="lg" className="rounded-2xl px-6" onClick={handleStartClick}>
-                    <Play className="mr-2 h-4 w-4" />
-                    {elapsed === 0 ? "Start" : "Resume"}
-                  </Button>
-                ) : (
-                  <Button size="lg" variant="secondary" className="rounded-2xl px-6" onClick={pauseTimer}>
-                    <Pause className="mr-2 h-4 w-4" />
-                    Pause
-                  </Button>
-                )}
-                <Button size="lg" variant="outline" className="rounded-2xl px-6" onClick={resetTimer}>
-                  <RotateCcw className="mr-2 h-4 w-4" />
-                  Reset
-                </Button>
-                <Button
-                  size="lg"
-                  variant={soundEnabled ? "outline" : "secondary"}
-                  className="rounded-2xl px-6"
-                  onClick={() => setSoundEnabled((v) => !v)}
-                >
-                  <Volume2 className="mr-2 h-4 w-4" />
-                  {soundEnabled ? "Sound On" : "Sound Off"}
-                </Button>
-              </div>
-
-              <div className="rounded-2xl border border-dashed border-slate-300 p-4 text-sm text-slate-600">
-                One click starts the full 14-minute cycle. The app beeps once after each 3-minute subject segment and gives a triple beep when time is up. The timer continues counting overtime so students can see how much extra time was used.
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-3xl border-0 shadow-sm">
-            <CardHeader>
-              <CardTitle className="text-xl md:text-2xl">Segment Plan</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {subjectLabels.map((label, index) => {
-                  const isFinal = index === 4;
-                  const start = isFinal ? SUBJECT_SECONDS * 4 : index * SUBJECT_SECONDS;
-                  const end = isFinal ? TOTAL_SECONDS : start + SUBJECT_SECONDS;
-                  const isDone = elapsed >= end;
-                  const isActive = elapsed >= start && elapsed < end;
-
-                  return (
-                    <div
-                      key={label}
-                      className={`rounded-2xl p-4 ring-1 transition-all ${
-                        isActive
-                          ? "bg-slate-900 text-white ring-slate-900"
-                          : isDone
-                          ? "bg-slate-100 text-slate-500 ring-slate-200"
-                          : "bg-white text-slate-800 ring-slate-200"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <div className="font-semibold">{label}</div>
-                          <div className={`text-sm ${isActive ? "text-slate-300" : "text-slate-500"}`}>
-                            {isFinal ? "2 minutes" : "3 minutes"}
-                          </div>
-                        </div>
-                        <Badge variant={isActive ? "secondary" : "outline"} className="rounded-full">
-                          {isDone ? "Done" : isActive ? "Live" : "Pending"}
-                        </Badge>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
 
               {isOvertime && (
-                <div className="mt-3 rounded-2xl bg-red-700 p-4 text-white ring-1 ring-red-700">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="flex items-center gap-2 font-semibold">
-                        <AlertTriangle className="h-4 w-4" />
-                        Overtime
-                      </div>
-                      <div className="text-sm text-red-200">Extra time used</div>
-                    </div>
-                    <div className="text-2xl font-bold tabular-nums">+{formatTime(overtimeSeconds)}</div>
+                <div className="flex w-full items-center justify-between rounded-2xl bg-red-50 p-4 ring-1 ring-red-200">
+                  <div className="flex items-center gap-2 font-semibold text-red-700">
+                    <AlertTriangle className="h-4 w-4" />
+                    Time&rsquo;s Up
                   </div>
+                  <div className="text-2xl font-bold tabular-nums text-red-700">+{fmt(overtime)}</div>
                 </div>
               )}
 
-              <div className="mt-6 rounded-2xl bg-slate-50 p-4 text-sm text-slate-600 ring-1 ring-slate-200">
-                Suggested subject flow:<br />
-                Problem 30 sec &bull; Solution 30 sec &bull; Outcomes 60 sec &bull; Q&amp;A 60 sec
+              {/* controls */}
+              <div className="flex flex-wrap gap-3">
+                {phase === "presenting" ? (
+                  <Button size="lg" variant="secondary" className="rounded-2xl px-6" onClick={pause}>
+                    <Pause className="mr-2 h-4 w-4" /> Pause
+                  </Button>
+                ) : (
+                  <Button size="lg" className="rounded-2xl px-6" onClick={resume}>
+                    <Play className="mr-2 h-4 w-4" /> Resume
+                  </Button>
+                )}
+                <Button size="lg" variant="outline" className="rounded-2xl px-6" onClick={reset}>
+                  <RotateCcw className="mr-2 h-4 w-4" /> Reset
+                </Button>
               </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+            </div>
+          )}
+        </section>
 
-      {showNameModal && (
+        {/* ── RIGHT: segments ────────── */}
+        {(phase === "presenting" || phase === "paused") && (
+          <aside className="flex shrink-0 flex-col gap-2 border-t bg-white p-4 lg:w-72 lg:border-l lg:border-t-0 lg:p-5 xl:w-80">
+            <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Segments</div>
+
+            {/* setup row */}
+            <div className="flex items-center justify-between rounded-xl bg-amber-50 px-3 py-2 ring-1 ring-amber-200">
+              <div className="flex items-center gap-2">
+                <Settings className="h-3.5 w-3.5 text-amber-600" />
+                <span className="text-sm font-medium text-amber-800">Setup</span>
+              </div>
+              <span className="text-sm font-bold tabular-nums text-amber-700">{fmt(setupSeconds)}</span>
+            </div>
+
+            {segmentLabels.map((label, i) => {
+              const isFinal = i === 4;
+              const start = isFinal ? 4 * SUBJECT_SECONDS : i * SUBJECT_SECONDS;
+              const end = isFinal ? TOTAL_SECONDS : start + SUBJECT_SECONDS;
+              const done = elapsed >= end;
+              const active = elapsed >= start && elapsed < end;
+              return (
+                <div
+                  key={label}
+                  className={`flex items-center justify-between rounded-xl px-3 py-2 ring-1 transition-all ${
+                    active
+                      ? "bg-slate-900 text-white ring-slate-900"
+                      : done
+                        ? "bg-slate-50 text-slate-400 ring-slate-200"
+                        : "bg-white text-slate-700 ring-slate-200"
+                  }`}
+                >
+                  <span className="text-sm font-medium">{label}</span>
+                  <Badge
+                    variant={active ? "secondary" : "outline"}
+                    className={`rounded-full text-xs ${done && !active ? "border-slate-200 text-slate-400" : ""}`}
+                  >
+                    {done ? "Done" : active ? "Live" : isFinal ? "2 min" : "3 min"}
+                  </Badge>
+                </div>
+              );
+            })}
+
+            {isOvertime && (
+              <div className="flex items-center justify-between rounded-xl bg-red-700 px-3 py-2 text-white ring-1 ring-red-700">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  <span className="text-sm font-medium">Overtime</span>
+                </div>
+                <span className="text-sm font-bold tabular-nums">+{fmt(overtime)}</span>
+              </div>
+            )}
+
+            {/* report summary */}
+            <div className="mt-auto rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">
+              <div className="mb-2 text-xs font-semibold uppercase text-slate-400">Time Report</div>
+              <div className="space-y-1 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Entered</span>
+                  <span className="tabular-nums text-slate-600">{fmtClock(setupStartTime)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Started</span>
+                  <span className="tabular-nums text-slate-600">{fmtClock(presentationStartTime)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Now</span>
+                  <span className="tabular-nums text-slate-600">{fmtClock(currentTime)}</span>
+                </div>
+                <div className="border-t border-slate-200 pt-1" />
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Setup</span>
+                  <span className="font-semibold tabular-nums text-amber-700">{fmt(setupSeconds)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Presentation</span>
+                  <span className="font-semibold tabular-nums text-slate-700">{fmt(Math.min(elapsed, TOTAL_SECONDS))}</span>
+                </div>
+                {isOvertime && (
+                  <div className="flex justify-between text-red-600">
+                    <span>Overtime</span>
+                    <span className="font-semibold tabular-nums">+{fmt(overtime)}</span>
+                  </div>
+                )}
+                <div className="border-t border-slate-200 pt-1">
+                  <div className="flex justify-between font-semibold">
+                    <span className="text-slate-700">Total Time</span>
+                    <span className="tabular-nums text-slate-900">{fmt(setupSeconds + elapsed)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </aside>
+        )}
+      </main>
+
+      {/* ── NAME MODAL ─────────────────── */}
+      {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-xl">
             <h2 className="text-2xl font-bold text-slate-900">Student Name</h2>
-            <p className="mt-1 text-sm text-slate-500">Enter the student's name before starting the timer.</p>
+            <p className="mt-1 text-sm text-slate-500">Enter the student&rsquo;s name to begin setup.</p>
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                handleNameSubmit();
+                submitName();
               }}
             >
               <input
-                ref={nameInputRef}
+                ref={inputRef}
                 type="text"
                 value={nameInput}
                 onChange={(e) => setNameInput(e.target.value)}
@@ -382,22 +449,11 @@ function JuryTimerApp() {
                 className="mt-5 w-full rounded-2xl border border-slate-300 px-4 py-3 text-lg text-slate-900 outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
               />
               <div className="mt-6 flex gap-3">
-                <Button
-                  type="submit"
-                  size="lg"
-                  className="flex-1 rounded-2xl"
-                  disabled={!nameInput.trim()}
-                >
-                  <Play className="mr-2 h-4 w-4" />
-                  Start Timer
+                <Button type="submit" size="lg" className="flex-1 rounded-2xl" disabled={!nameInput.trim()}>
+                  <Settings className="mr-2 h-4 w-4" />
+                  Start Setup
                 </Button>
-                <Button
-                  type="button"
-                  size="lg"
-                  variant="outline"
-                  className="rounded-2xl"
-                  onClick={() => setShowNameModal(false)}
-                >
+                <Button type="button" size="lg" variant="outline" className="rounded-2xl" onClick={() => setShowModal(false)}>
                   Cancel
                 </Button>
               </div>
@@ -408,5 +464,3 @@ function JuryTimerApp() {
     </div>
   );
 }
-
-export default JuryTimerApp;
