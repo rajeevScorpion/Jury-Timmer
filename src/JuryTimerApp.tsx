@@ -247,9 +247,9 @@ export default function JuryTimerApp() {
                 <Badge className="rounded-full px-4 py-1 text-sm">4 Subjects &times; 3 min</Badge>
                 <Badge variant="secondary" className="rounded-full px-4 py-1 text-sm">Final Feedback 2 min</Badge>
               </div>
-              <Button size="lg" className="rounded-2xl px-10 text-base" onClick={openModal}>
-                <Play className="mr-2 h-5 w-5" />
-                Next Student
+              <Button size="lg" className="rounded-2xl px-10 py-6 text-lg" onClick={openModal}>
+                <Play className="mr-2 h-6 w-6" />
+                Start Prep Timer
               </Button>
             </CardContent>
           </Card>
@@ -366,41 +366,99 @@ export default function JuryTimerApp() {
                 )}
 
                 {/* controls */}
-                <div className="flex flex-wrap gap-3 pt-1">
+                <div className="flex items-center gap-4 pt-2">
                   {phase === "finished" ? (
-                    <Button size="lg" className="rounded-2xl px-8" onClick={reset}>
-                      <RotateCcw className="mr-2 h-4 w-4" /> Next Student
+                    <Button size="lg" className="rounded-2xl px-10 py-6 text-lg" onClick={reset}>
+                      <RotateCcw className="mr-2 h-5 w-5" /> Next Student
                     </Button>
                   ) : (
                     <>
-                      {phase === "presenting" ? (
-                        <Button size="lg" variant="secondary" className="rounded-2xl px-6" onClick={pause}>
-                          <Pause className="mr-2 h-4 w-4" /> Pause
+                      <div className="flex gap-4">
+                        {phase === "presenting" ? (
+                          <Button size="lg" variant="secondary" className="rounded-2xl px-8 py-6 text-lg" onClick={pause}>
+                            <Pause className="mr-2 h-5 w-5" /> Pause
+                          </Button>
+                        ) : (
+                          <Button size="lg" className="rounded-2xl px-8 py-6 text-lg" onClick={resume}>
+                            <Play className="mr-2 h-5 w-5" /> Resume
+                          </Button>
+                        )}
+                        <Button
+                          size="lg"
+                          variant="outline"
+                          className="rounded-2xl border-red-200 px-8 py-6 text-lg text-red-600 hover:bg-red-50 hover:text-red-700"
+                          onClick={finish}
+                        >
+                          <Square className="mr-2 h-5 w-5" /> Finish
                         </Button>
-                      ) : (
-                        <Button size="lg" className="rounded-2xl px-6" onClick={resume}>
-                          <Play className="mr-2 h-4 w-4" /> Resume
+                      </div>
+                      <div className="ml-auto">
+                        <Button size="lg" variant="outline" className="rounded-2xl px-8 py-6 text-lg" onClick={reset}>
+                          <RotateCcw className="mr-2 h-5 w-5" /> Reset
                         </Button>
-                      )}
-                      <Button
-                        size="lg"
-                        variant="outline"
-                        className="rounded-2xl border-red-200 px-6 text-red-600 hover:bg-red-50 hover:text-red-700"
-                        onClick={finish}
-                      >
-                        <Square className="mr-2 h-4 w-4" /> Finish
-                      </Button>
-                      <Button size="lg" variant="outline" className="rounded-2xl px-6" onClick={reset}>
-                        <RotateCcw className="mr-2 h-4 w-4" /> Reset
-                      </Button>
+                      </div>
                     </>
                   )}
                 </div>
               </CardContent>
             </Card>
 
-            {/* ── RIGHT: Segments + Report ── */}
+            {/* ── RIGHT: Report on top, Segments below ── */}
             <div className="space-y-5">
+              {/* ── Time Report ────────── */}
+              <Card className="rounded-3xl border-0 shadow-sm">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg md:text-xl">Time Report</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Entered</span>
+                      <span className="tabular-nums font-medium text-slate-700">{fmtClock(setupStartTime)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Presented</span>
+                      <span className="tabular-nums font-medium text-slate-700">{fmtClock(presentationStartTime)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">{endTime ? "Ended" : "Now"}</span>
+                      <span className="tabular-nums font-medium text-slate-700">{fmtClock(endTime || currentTime)}</span>
+                    </div>
+
+                    <div className="border-t border-slate-200" />
+
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Setup Time</span>
+                      <span className="font-semibold tabular-nums text-amber-700">{fmt(setupSeconds)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Presentation</span>
+                      <span className="font-semibold tabular-nums text-slate-700">{fmt(Math.min(elapsed, TOTAL_SECONDS))}</span>
+                    </div>
+                    {isOvertime && (
+                      <div className="flex justify-between text-red-600">
+                        <span>Overtime</span>
+                        <span className="font-semibold tabular-nums">+{fmt(overtime)}</span>
+                      </div>
+                    )}
+                    {phase === "finished" && remaining > 0 && (
+                      <div className="flex justify-between text-emerald-600">
+                        <span>Time Saved</span>
+                        <span className="font-semibold tabular-nums">{fmt(remaining)}</span>
+                      </div>
+                    )}
+
+                    <div className="border-t border-slate-200" />
+
+                    <div className="flex justify-between text-base font-bold">
+                      <span className="text-slate-800">Total Time</span>
+                      <span className="tabular-nums text-slate-900">{fmt(setupSeconds + elapsed)}</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* ── Segment Plan ────────── */}
               <Card className="rounded-3xl border-0 shadow-sm">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-lg md:text-xl">Segment Plan</CardTitle>
@@ -457,59 +515,6 @@ export default function JuryTimerApp() {
                       <span className="text-sm font-bold tabular-nums">+{fmt(overtime)}</span>
                     </div>
                   )}
-                </CardContent>
-              </Card>
-
-              {/* ── Time Report ────────── */}
-              <Card className="rounded-3xl border-0 shadow-sm">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-lg md:text-xl">Time Report</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">Entered</span>
-                      <span className="tabular-nums font-medium text-slate-700">{fmtClock(setupStartTime)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">Presented</span>
-                      <span className="tabular-nums font-medium text-slate-700">{fmtClock(presentationStartTime)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">{endTime ? "Ended" : "Now"}</span>
-                      <span className="tabular-nums font-medium text-slate-700">{fmtClock(endTime || currentTime)}</span>
-                    </div>
-
-                    <div className="border-t border-slate-200" />
-
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">Setup Time</span>
-                      <span className="font-semibold tabular-nums text-amber-700">{fmt(setupSeconds)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">Presentation</span>
-                      <span className="font-semibold tabular-nums text-slate-700">{fmt(Math.min(elapsed, TOTAL_SECONDS))}</span>
-                    </div>
-                    {isOvertime && (
-                      <div className="flex justify-between text-red-600">
-                        <span>Overtime</span>
-                        <span className="font-semibold tabular-nums">+{fmt(overtime)}</span>
-                      </div>
-                    )}
-                    {phase === "finished" && remaining > 0 && (
-                      <div className="flex justify-between text-emerald-600">
-                        <span>Time Saved</span>
-                        <span className="font-semibold tabular-nums">{fmt(remaining)}</span>
-                      </div>
-                    )}
-
-                    <div className="border-t border-slate-200" />
-
-                    <div className="flex justify-between text-base font-bold">
-                      <span className="text-slate-800">Total Time</span>
-                      <span className="tabular-nums text-slate-900">{fmt(setupSeconds + elapsed)}</span>
-                    </div>
-                  </div>
                 </CardContent>
               </Card>
             </div>
