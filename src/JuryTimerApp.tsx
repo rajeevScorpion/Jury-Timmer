@@ -354,13 +354,16 @@ export default function JuryTimerApp() {
                 )}
 
                 {isOvertime && phase !== "finished" && (
-                  <div className="rounded-2xl bg-red-50 p-4 ring-1 ring-red-200">
+                  <div className="rounded-2xl bg-red-50 p-5 ring-1 ring-red-200">
                     <div className="flex items-center justify-between gap-4">
-                      <div className="flex items-center gap-2 font-semibold text-red-700">
-                        <AlertTriangle className="h-4 w-4" />
-                        Time&rsquo;s Up
+                      <div>
+                        <div className="text-xs font-medium uppercase tracking-wide text-red-500">Time&rsquo;s Up</div>
+                        <div className="mt-1 text-xl font-semibold text-red-700">Overtime</div>
                       </div>
-                      <div className="text-2xl font-bold tabular-nums text-red-700">+{fmt(overtime)}</div>
+                      <div className="text-right">
+                        <div className="text-xs text-red-500">Extra Time</div>
+                        <div className="text-3xl font-bold tabular-nums text-red-700">+{fmt(overtime)}</div>
+                      </div>
                     </div>
                   </div>
                 )}
