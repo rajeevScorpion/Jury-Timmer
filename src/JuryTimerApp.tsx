@@ -403,6 +403,10 @@ export default function JuryTimerApp() {
                     </>
                   )}
                 </div>
+
+                <div className="rounded-2xl border border-dashed border-slate-300 p-4 text-sm text-slate-600">
+                  One click starts the full 14-minute cycle. The app beeps once after each 3-minute subject segment and gives a triple beep when time is up. The timer continues counting overtime so students can see how much extra time was used.
+                </div>
               </CardContent>
             </Card>
 
