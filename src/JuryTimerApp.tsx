@@ -212,29 +212,29 @@ export default function JuryTimerApp() {
       <div className="mx-auto max-w-6xl space-y-5">
 
         {/* ── HEADER CARD ──────────────── */}
-        <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200 md:p-7">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200 md:px-8 md:py-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <div className="flex items-center gap-1.5 text-slate-500">
-                <Clock3 className="h-3.5 w-3.5" />
-                <span className="text-xs font-medium uppercase tracking-wide">Internal Mid-Term Jury</span>
+              <div className="mb-1 flex items-center gap-2 text-slate-500">
+                <Clock3 className="h-4 w-4" />
+                <span className="text-xs font-medium uppercase tracking-widest">Internal Mid-Term Jury</span>
               </div>
-              <h1 className="text-2xl font-bold tracking-tight text-slate-900 md:text-4xl">Jury Timer</h1>
-              <p className="mt-1 text-sm text-slate-500">
+              <h1 className="text-2xl font-bold leading-tight tracking-tight text-slate-900 md:text-4xl">Jury Timer</h1>
+              <p className="mt-1.5 text-sm leading-relaxed text-slate-500">
                 Communication Design &bull; Semester 06 &bull; 14 min per student
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-3">
               {studentName && (
-                <div className="flex items-center gap-2 rounded-full bg-slate-900 px-4 py-1.5 text-white">
-                  <User className="h-3.5 w-3.5" />
+                <div className="flex items-center gap-2 rounded-full bg-slate-900 px-5 py-2 text-white">
+                  <User className="h-4 w-4" />
                   <span className="text-sm font-semibold">{studentName}</span>
                 </div>
               )}
               {phase !== "idle" && setupSeconds > 0 && (
-                <div className="flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1.5 text-amber-800">
-                  <Settings className="h-3.5 w-3.5" />
+                <div className="flex items-center gap-2 rounded-full bg-amber-100 px-4 py-2 text-amber-800">
+                  <Settings className="h-4 w-4" />
                   <span className="text-xs font-semibold">Setup {fmt(setupSeconds)}</span>
                 </div>
               )}
@@ -243,14 +243,14 @@ export default function JuryTimerApp() {
               </div>
               <button
                 onClick={takeScreenshot}
-                className="rounded-full p-2 text-slate-500 transition hover:bg-slate-100"
+                className="rounded-full p-2.5 text-slate-500 transition hover:bg-slate-100"
                 title="Save screenshot"
               >
                 <Camera className="h-4 w-4" />
               </button>
               <button
                 onClick={() => setSoundEnabled((v) => !v)}
-                className={`rounded-full p-2 transition ${soundEnabled ? "text-slate-500 hover:bg-slate-100" : "bg-slate-200 text-slate-400"}`}
+                className={`rounded-full p-2.5 transition ${soundEnabled ? "text-slate-500 hover:bg-slate-100" : "bg-slate-200 text-slate-400"}`}
               >
                 <Volume2 className="h-4 w-4" />
               </button>
@@ -305,12 +305,12 @@ export default function JuryTimerApp() {
           <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
             {/* ── LEFT: Live Timer ────── */}
             <Card className="rounded-3xl border-0 shadow-sm">
-              <CardHeader className="pb-3">
+              <CardHeader className="pb-4">
                 <CardTitle className="text-lg md:text-xl">Live Timer</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-5">
+              <CardContent className="space-y-6">
                 {/* big clock */}
-                <div className={`rounded-3xl px-6 py-7 text-center text-white shadow-inner md:py-10 ${
+                <div className={`rounded-3xl px-8 py-8 text-center text-white shadow-inner md:py-12 ${
                   phase === "finished"
                     ? "bg-emerald-700"
                     : isOvertime
@@ -345,54 +345,54 @@ export default function JuryTimerApp() {
                 </div>
 
                 {/* progress */}
-                <div className="space-y-1.5">
-                  <div className="flex justify-between text-xs text-slate-500">
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm text-slate-500">
                     <span>Total Progress</span>
                     <span>{Math.round(totalPct)}%</span>
                   </div>
-                  <Progress value={totalPct} className="h-2.5" />
+                  <Progress value={totalPct} className="h-3" />
                 </div>
 
                 {/* current segment */}
                 {!isOvertime && phase !== "finished" && (
-                  <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
-                    <div className="flex items-center justify-between gap-4">
+                  <div className="rounded-2xl bg-slate-50 p-5 ring-1 ring-slate-200">
+                    <div className="flex items-center justify-between gap-6">
                       <div>
-                        <div className="text-xs uppercase tracking-wide text-slate-400">Current Segment</div>
-                        <div className="mt-1 text-xl font-semibold text-slate-900">{segmentLabels[stageIdx]}</div>
+                        <div className="text-xs uppercase tracking-widest text-slate-400">Current Segment</div>
+                        <div className="mt-1.5 text-xl font-semibold leading-snug text-slate-900">{segmentLabels[stageIdx]}</div>
                       </div>
                       <div className="text-right">
                         <div className="text-xs text-slate-400">Remaining</div>
-                        <div className="text-2xl font-bold tabular-nums text-slate-900">{fmt(stageRem)}</div>
+                        <div className="mt-0.5 text-2xl font-bold tabular-nums text-slate-900">{fmt(stageRem)}</div>
                       </div>
                     </div>
-                    <div className="mt-3 space-y-1">
+                    <div className="mt-4 space-y-1.5">
                       <div className="flex justify-between text-xs text-slate-500">
                         <span>Segment Progress</span>
                         <span>{Math.round(stagePct)}%</span>
                       </div>
-                      <Progress value={stagePct} className="h-1.5" />
+                      <Progress value={stagePct} className="h-2" />
                     </div>
                   </div>
                 )}
 
                 {isOvertime && phase !== "finished" && (
                   <div className="rounded-2xl bg-red-50 p-5 ring-1 ring-red-200">
-                    <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center justify-between gap-6">
                       <div>
-                        <div className="text-xs font-medium uppercase tracking-wide text-red-500">Time&rsquo;s Up</div>
-                        <div className="mt-1 text-xl font-semibold text-red-700">Overtime</div>
+                        <div className="text-xs font-medium uppercase tracking-widest text-red-500">Time&rsquo;s Up</div>
+                        <div className="mt-1.5 text-xl font-semibold leading-snug text-red-700">Overtime</div>
                       </div>
                       <div className="text-right">
                         <div className="text-xs text-red-500">Extra Time</div>
-                        <div className="text-3xl font-bold tabular-nums text-red-700">+{fmt(overtime)}</div>
+                        <div className="mt-0.5 text-3xl font-bold tabular-nums text-red-700">+{fmt(overtime)}</div>
                       </div>
                     </div>
                   </div>
                 )}
 
                 {/* controls */}
-                <div className="flex items-center gap-4 pt-2">
+                <div className="flex items-center gap-4 pt-3">
                   {phase === "finished" ? (
                     <Button size="lg" className="rounded-2xl px-10 py-6 text-lg" onClick={reset}>
                       <RotateCcw className="mr-2 h-5 w-5" /> Next Student
@@ -427,7 +427,7 @@ export default function JuryTimerApp() {
                   )}
                 </div>
 
-                <div className="rounded-2xl border border-dashed border-slate-300 p-4 text-sm text-slate-600">
+                <div className="rounded-2xl border border-dashed border-slate-300 p-5 text-sm leading-relaxed text-slate-500">
                   One click starts the full 14-minute cycle. The app beeps once after each 3-minute subject segment and gives a triple beep when time is up. The timer continues counting overtime so students can see how much extra time was used.
                 </div>
               </CardContent>
@@ -437,50 +437,50 @@ export default function JuryTimerApp() {
             <div className="space-y-5">
               {/* ── Time Report ────────── */}
               <Card className="rounded-3xl border-0 shadow-sm">
-                <CardHeader className="pb-3">
+                <CardHeader className="pb-4">
                   <CardTitle className="text-lg md:text-xl">Time Report</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
+                  <div className="space-y-3 text-sm">
+                    <div className="flex justify-between leading-relaxed">
                       <span className="text-slate-500">Entered</span>
                       <span className="tabular-nums font-medium text-slate-700">{fmtClock(setupStartTime)}</span>
                     </div>
-                    <div className="flex justify-between">
+                    <div className="flex justify-between leading-relaxed">
                       <span className="text-slate-500">Presented</span>
                       <span className="tabular-nums font-medium text-slate-700">{fmtClock(presentationStartTime)}</span>
                     </div>
-                    <div className="flex justify-between">
+                    <div className="flex justify-between leading-relaxed">
                       <span className="text-slate-500">{endTime ? "Ended" : "Now"}</span>
                       <span className="tabular-nums font-medium text-slate-700">{fmtClock(endTime || currentTime)}</span>
                     </div>
 
-                    <div className="border-t border-slate-200" />
+                    <div className="border-t border-slate-200 my-1" />
 
-                    <div className="flex justify-between">
+                    <div className="flex justify-between leading-relaxed">
                       <span className="text-slate-500">Setup Time</span>
                       <span className="font-semibold tabular-nums text-amber-700">{fmt(setupSeconds)}</span>
                     </div>
-                    <div className="flex justify-between">
+                    <div className="flex justify-between leading-relaxed">
                       <span className="text-slate-500">Presentation</span>
                       <span className="font-semibold tabular-nums text-slate-700">{fmt(Math.min(elapsed, TOTAL_SECONDS))}</span>
                     </div>
                     {isOvertime && (
-                      <div className="flex justify-between text-red-600">
+                      <div className="flex justify-between leading-relaxed text-red-600">
                         <span>Overtime</span>
                         <span className="font-semibold tabular-nums">+{fmt(overtime)}</span>
                       </div>
                     )}
                     {phase === "finished" && remaining > 0 && (
-                      <div className="flex justify-between text-emerald-600">
+                      <div className="flex justify-between leading-relaxed text-emerald-600">
                         <span>Time Saved</span>
                         <span className="font-semibold tabular-nums">{fmt(remaining)}</span>
                       </div>
                     )}
 
-                    <div className="border-t border-slate-200" />
+                    <div className="border-t border-slate-200 my-1" />
 
-                    <div className="flex justify-between text-base font-bold">
+                    <div className="flex justify-between text-base font-bold leading-relaxed">
                       <span className="text-slate-800">Total Time</span>
                       <span className="tabular-nums text-slate-900">{fmt(setupSeconds + elapsed)}</span>
                     </div>
@@ -490,14 +490,14 @@ export default function JuryTimerApp() {
 
               {/* ── Segment Plan ────────── */}
               <Card className="rounded-3xl border-0 shadow-sm">
-                <CardHeader className="pb-3">
+                <CardHeader className="pb-4">
                   <CardTitle className="text-lg md:text-xl">Segment Plan</CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-2.5">
+                <CardContent className="space-y-3">
                   {/* setup row */}
-                  <div className="flex items-center justify-between rounded-2xl bg-amber-50 px-4 py-3 ring-1 ring-amber-200">
-                    <div className="flex items-center gap-2">
-                      <Settings className="h-3.5 w-3.5 text-amber-600" />
+                  <div className="flex items-center justify-between rounded-2xl bg-amber-50 px-5 py-3.5 ring-1 ring-amber-200">
+                    <div className="flex items-center gap-2.5">
+                      <Settings className="h-4 w-4 text-amber-600" />
                       <span className="text-sm font-medium text-amber-800">Setup</span>
                     </div>
                     <span className="text-sm font-bold tabular-nums text-amber-700">{fmt(setupSeconds)}</span>
@@ -512,7 +512,7 @@ export default function JuryTimerApp() {
                     return (
                       <div
                         key={label}
-                        className={`flex items-center justify-between rounded-2xl px-4 py-3 ring-1 transition-all ${
+                        className={`flex items-center justify-between rounded-2xl px-5 py-3.5 ring-1 transition-all ${
                           active
                             ? "bg-slate-900 text-white ring-slate-900"
                             : done
@@ -521,8 +521,8 @@ export default function JuryTimerApp() {
                         }`}
                       >
                         <div>
-                          <div className="text-sm font-semibold">{label}</div>
-                          <div className={`text-xs ${active ? "text-slate-300" : "text-slate-400"}`}>
+                          <div className="text-sm font-semibold leading-snug">{label}</div>
+                          <div className={`mt-0.5 text-xs leading-normal ${active ? "text-slate-300" : "text-slate-400"}`}>
                             {isFinal ? "2 minutes" : "3 minutes"}
                           </div>
                         </div>
@@ -537,9 +537,9 @@ export default function JuryTimerApp() {
                   })}
 
                   {isOvertime && (
-                    <div className="flex items-center justify-between rounded-2xl bg-red-700 px-4 py-3 text-white ring-1 ring-red-700">
-                      <div className="flex items-center gap-2">
-                        <AlertTriangle className="h-3.5 w-3.5" />
+                    <div className="flex items-center justify-between rounded-2xl bg-red-700 px-5 py-3.5 text-white ring-1 ring-red-700">
+                      <div className="flex items-center gap-2.5">
+                        <AlertTriangle className="h-4 w-4" />
                         <span className="text-sm font-semibold">Overtime</span>
                       </div>
                       <span className="text-sm font-bold tabular-nums">+{fmt(overtime)}</span>
