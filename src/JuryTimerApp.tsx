@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import html2canvas from "html2canvas";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +15,7 @@ import {
   Settings,
   ChevronRight,
   Square,
+  Camera,
 } from "lucide-react";
 
 /* ── constants ─────────────────────────────────────────── */
@@ -58,6 +60,7 @@ export default function JuryTimerApp() {
   const audioCtx = useRef<AudioContext | null>(null);
   const lastCue = useRef(-1);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const pageRef = useRef<HTMLDivElement | null>(null);
 
   /* ── derived ──────────────────────── */
   const isOvertime = elapsed > TOTAL_SECONDS;
@@ -190,9 +193,22 @@ export default function JuryTimerApp() {
 
   const isActive = phase === "presenting" || phase === "paused" || phase === "finished";
 
+  const takeScreenshot = async () => {
+    if (!pageRef.current) return;
+    const canvas = await html2canvas(pageRef.current, {
+      backgroundColor: "#f1f5f9",
+      scale: 2,
+      useCORS: true,
+    });
+    const link = document.createElement("a");
+    link.download = `jury-timer${studentName ? "-" + studentName.replace(/\s+/g, "-") : ""}.png`;
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+  };
+
   /* ── render ───────────────────────── */
   return (
-    <div className="min-h-screen bg-slate-100 p-4 md:p-8 lg:p-10">
+    <div ref={pageRef} className="min-h-screen bg-slate-100 p-4 md:p-8 lg:p-10">
       <div className="mx-auto max-w-6xl space-y-5">
 
         {/* ── HEADER CARD ──────────────── */}
@@ -225,6 +241,13 @@ export default function JuryTimerApp() {
               <div className="tabular-nums text-sm font-medium text-slate-400">
                 {fmtClock(currentTime)}
               </div>
+              <button
+                onClick={takeScreenshot}
+                className="rounded-full p-2 text-slate-500 transition hover:bg-slate-100"
+                title="Save screenshot"
+              >
+                <Camera className="h-4 w-4" />
+              </button>
               <button
                 onClick={() => setSoundEnabled((v) => !v)}
                 className={`rounded-full p-2 transition ${soundEnabled ? "text-slate-500 hover:bg-slate-100" : "bg-slate-200 text-slate-400"}`}
