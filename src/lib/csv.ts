@@ -2,6 +2,7 @@ import type { JurySession, StudentRecord } from "@/types/session";
 
 const COLUMNS = [
   "student_name",
+  "jury_type",
   "department",
   "section",
   "semester",
@@ -32,6 +33,7 @@ export function buildDayCsv(session: JurySession, records: StudentRecord[]): str
   const rows = records.map((r) => {
     const values: Record<(typeof COLUMNS)[number], unknown> = {
       student_name: r.student_name,
+      jury_type: session.jury_type,
       department: session.department,
       section: session.section,
       semester: session.semester,

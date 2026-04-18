@@ -33,15 +33,15 @@ export default function ReportHistoryView() {
   }, [load]);
 
   const toggle = async (id: string) => {
-    const now = !expanded[id];
-    setExpanded((p) => ({ ...p, [id]: now }));
-    if (now && !recordsBySession[id]) {
+    const nextOpen = !expanded[id];
+    setExpanded((prev) => ({ ...prev, [id]: nextOpen }));
+    if (nextOpen && !recordsBySession[id]) {
       const { data } = await supabase
         .from("student_records")
         .select("*")
         .eq("session_id", id)
         .order("student_order", { ascending: true });
-      setRecordsBySession((p) => ({ ...p, [id]: (data as StudentRecord[]) ?? [] }));
+      setRecordsBySession((prev) => ({ ...prev, [id]: (data as StudentRecord[]) ?? [] }));
     }
   };
 
@@ -54,7 +54,7 @@ export default function ReportHistoryView() {
         .eq("session_id", session.id)
         .order("student_order", { ascending: true });
       records = (data as StudentRecord[]) ?? [];
-      setRecordsBySession((p) => ({ ...p, [session.id]: records }));
+      setRecordsBySession((prev) => ({ ...prev, [session.id]: records }));
     }
     downloadCsv(csvFilenameFor(session), buildDayCsv(session, records));
   };
@@ -62,7 +62,7 @@ export default function ReportHistoryView() {
   if (loading) {
     return (
       <div className="mx-auto max-w-5xl px-4 py-16 md:px-8">
-        <div className="text-sm text-slate-500">Loading history…</div>
+        <div className="text-sm text-slate-500">Loading history...</div>
       </div>
     );
   }
@@ -88,36 +88,44 @@ export default function ReportHistoryView() {
       </p>
 
       <div className="space-y-3">
-        {sessions.map((s) => {
-          const isExpanded = !!expanded[s.id];
-          const records = recordsBySession[s.id] ?? [];
+        {sessions.map((session) => {
+          const isExpanded = !!expanded[session.id];
+          const records = recordsBySession[session.id] ?? [];
+
           return (
-            <Card key={s.id} className="rounded-3xl border-0 shadow-sm">
+            <Card key={session.id} className="rounded-3xl border-0 shadow-sm">
               <CardContent className="p-5">
                 <div className="flex flex-wrap items-center justify-between gap-4">
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-lg font-semibold text-slate-900">{s.department}</span>
+                      <span className="text-lg font-semibold text-slate-900">{session.department}</span>
                       <Badge variant="outline" className="rounded-full">
-                        {s.section} · Sem {s.semester} · {s.academic_year}
+                        {session.jury_type}
                       </Badge>
-                      <Badge variant={s.status === "completed" ? "secondary" : "default"} className="rounded-full">
-                        {s.status}
+                      <Badge variant="outline" className="rounded-full">
+                        {session.section} · Sem {session.semester} · {session.academic_year}
+                      </Badge>
+                      <Badge
+                        variant={session.status === "completed" ? "secondary" : "default"}
+                        className="rounded-full"
+                      >
+                        {session.status}
                       </Badge>
                     </div>
                     <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-slate-500">
-                      <span>Created {new Date(s.created_at).toLocaleString()}</span>
-                      <span>· {s.number_of_students} students</span>
-                      <span>· {fmt(s.total_time_seconds)} total</span>
-                      <span>· {s.subjects.length} subjects + feedback</span>
+                      <span>Created {new Date(session.created_at).toLocaleString()}</span>
+                      <span>· {session.number_of_students} students</span>
+                      <span>· {fmt(session.total_time_seconds)} total</span>
+                      <span>· {session.subjects.length} subjects + feedback</span>
                     </div>
                   </div>
+
                   <div className="flex items-center gap-2">
                     <Button
                       variant="outline"
                       size="sm"
                       className="rounded-full"
-                      onClick={() => downloadSessionCsv(s)}
+                      onClick={() => downloadSessionCsv(session)}
                     >
                       <Download className="mr-1.5 h-4 w-4" />
                       CSV
@@ -126,11 +134,15 @@ export default function ReportHistoryView() {
                       variant="outline"
                       size="sm"
                       className="rounded-full"
-                      onClick={() => toggle(s.id)}
+                      onClick={() => toggle(session.id)}
                     >
                       <Users className="mr-1.5 h-4 w-4" />
                       Students
-                      {isExpanded ? <ChevronUp className="ml-1 h-4 w-4" /> : <ChevronDown className="ml-1 h-4 w-4" />}
+                      {isExpanded ? (
+                        <ChevronUp className="ml-1 h-4 w-4" />
+                      ) : (
+                        <ChevronDown className="ml-1 h-4 w-4" />
+                      )}
                     </Button>
                   </div>
                 </div>
@@ -142,7 +154,9 @@ export default function ReportHistoryView() {
                         No student records yet.
                       </div>
                     ) : (
-                      records.map((r) => <StudentRow key={r.id} session={s} record={r} />)
+                      records.map((record) => (
+                        <StudentRow key={record.id} session={session} record={record} />
+                      ))
                     )}
                   </div>
                 )}
@@ -174,7 +188,7 @@ function StudentRow({ session, record }: { session: JurySession; record: Student
       <div className="flex w-full items-center justify-between gap-3 px-4 py-3">
         <button
           type="button"
-          onClick={() => setOpen((v) => !v)}
+          onClick={() => setOpen((value) => !value)}
           className="flex flex-1 flex-wrap items-center gap-3 text-left"
         >
           <span className="w-8 text-xs font-medium text-slate-400">#{record.student_order}</span>
@@ -194,6 +208,7 @@ function StudentRow({ session, record }: { session: JurySession; record: Student
             </Badge>
           )}
         </button>
+
         <div className="flex items-center gap-1.5">
           <Button
             type="button"
@@ -204,17 +219,18 @@ function StudentRow({ session, record }: { session: JurySession; record: Student
             disabled={exporting}
           >
             <FileDown className="mr-1.5 h-4 w-4" />
-            {exporting ? "Generating…" : "PDF"}
+            {exporting ? "Generating..." : "PDF"}
           </Button>
           <button
             type="button"
-            onClick={() => setOpen((v) => !v)}
+            onClick={() => setOpen((value) => !value)}
             className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
           >
             {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </button>
         </div>
       </div>
+
       {open && (
         <div className="space-y-3 border-t border-slate-100 px-4 py-4 text-sm">
           <div>
@@ -222,9 +238,10 @@ function StudentRow({ session, record }: { session: JurySession; record: Student
               <FileText className="h-3 w-3" /> Final feedback
             </div>
             <div className="whitespace-pre-wrap text-slate-700">
-              {record.feedback?.final || <span className="text-slate-400">—</span>}
+              {record.feedback?.final || <span className="text-slate-400">-</span>}
             </div>
           </div>
+
           {record.feedback?.perSubject && Object.keys(record.feedback.perSubject).length > 0 && (
             <div>
               <div className="mb-1 text-xs font-medium uppercase tracking-widest text-slate-500">
@@ -240,6 +257,7 @@ function StudentRow({ session, record }: { session: JurySession; record: Student
               </div>
             </div>
           )}
+
           <div className="flex flex-wrap gap-4 text-xs text-slate-500">
             <span>Setup started {formatTs(record.setup_started_at)}</span>
             <span>Presented {formatTs(record.presentation_started_at)}</span>
@@ -252,6 +270,6 @@ function StudentRow({ session, record }: { session: JurySession; record: Student
 }
 
 function formatTs(iso: string | null): string {
-  if (!iso) return "—";
+  if (!iso) return "-";
   return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }

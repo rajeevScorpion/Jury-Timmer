@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+export const FEEDBACK_MODE_OPTIONS = ["synchronous", "post-jury"] as const;
+export const feedbackModeSchema = z.enum(FEEDBACK_MODE_OPTIONS);
+export type FeedbackMode = z.infer<typeof feedbackModeSchema>;
+
 export const feedbackSchema = z.object({
   final: z.string().default(""),
   perSubject: z.record(z.string(), z.string()).default({}),
@@ -9,6 +13,7 @@ export type Feedback = z.infer<typeof feedbackSchema>;
 export const jurySessionSchema = z.object({
   id: z.string().uuid(),
   faculty_id: z.string().uuid(),
+  jury_type: z.string().min(1),
   department: z.string().min(1),
   section: z.string().min(1),
   semester: z.string().min(1),
@@ -18,6 +23,7 @@ export const jurySessionSchema = z.object({
   buffer_seconds: z.number().int().nonnegative(),
   subjects: z.array(z.string().min(1)).min(1),
   feedback_seconds: z.number().int().nonnegative(),
+  feedback_mode: feedbackModeSchema,
   per_subject_seconds: z.number().int().positive(),
   status: z.enum(["active", "completed"]),
   created_at: z.string(),
@@ -45,6 +51,7 @@ export const studentRecordSchema = z.object({
 export type StudentRecord = z.infer<typeof studentRecordSchema>;
 
 export type DaySetupInput = {
+  jury_type: string;
   department: string;
   section: string;
   semester: string;
@@ -54,4 +61,5 @@ export type DaySetupInput = {
   buffer_seconds: number;
   subjects: string[];
   feedback_seconds: number;
+  feedback_mode: FeedbackMode;
 };

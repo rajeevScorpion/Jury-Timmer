@@ -6,7 +6,9 @@ import TopNav from "@/components/TopNav";
 import DaySetupForm from "@/components/DaySetupForm";
 import ReportHistoryView from "@/components/ReportHistoryView";
 import DocsView from "@/components/DocsView";
+import AdminView from "@/components/AdminView";
 import JuryTimerApp from "@/JuryTimerApp";
+import { isSuperAdminEnabled } from "@/lib/appSettings";
 
 function AppShell({ children }: { children: React.ReactNode }) {
   return (
@@ -40,6 +42,11 @@ function JuryGuard() {
   }
   if (!activeSession) return <Navigate to="/day/new" replace />;
   return <JuryTimerApp />;
+}
+
+function AdminGuard() {
+  if (!isSuperAdminEnabled) return <Navigate to="/" replace />;
+  return <AdminView />;
 }
 
 function SignedInRoutes() {
@@ -76,6 +83,14 @@ function SignedInRoutes() {
           element={
             <AppShell>
               <DocsView />
+            </AppShell>
+          }
+        />
+        <Route
+          path="/admin"
+          element={
+            <AppShell>
+              <AdminGuard />
             </AppShell>
           }
         />

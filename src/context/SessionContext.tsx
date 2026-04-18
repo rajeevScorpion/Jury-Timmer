@@ -103,6 +103,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       });
       const row = {
         faculty_id: user.id,
+        jury_type: input.jury_type,
         department: input.department,
         section: input.section,
         semester: input.semester,
@@ -112,6 +113,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         buffer_seconds: input.buffer_seconds,
         subjects: input.subjects,
         feedback_seconds: input.feedback_seconds,
+        feedback_mode: input.feedback_mode,
         per_subject_seconds: plan.perSubjectSeconds,
         status: "active",
       };

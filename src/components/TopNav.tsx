@@ -1,6 +1,8 @@
 import { NavLink } from "react-router-dom";
 import { Clock3, LogOut } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { isSuperAdminEnabled } from "@/lib/appSettings";
+import { appName } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
@@ -19,7 +21,7 @@ export default function TopNav() {
         <div className="flex items-center gap-2 text-slate-500">
           <Clock3 className="h-4 w-4" />
           <span className="text-xs font-semibold uppercase tracking-widest text-slate-700">
-            Jury Timer
+            {appName}
           </span>
         </div>
         <nav className="flex items-center gap-1">
@@ -35,6 +37,11 @@ export default function TopNav() {
           <NavLink to="/docs" className={linkClass}>
             Docs
           </NavLink>
+          {isSuperAdminEnabled && (
+            <NavLink to="/admin" className={linkClass}>
+              Admin
+            </NavLink>
+          )}
         </nav>
         <div className="flex items-center gap-3">
           <span className="hidden text-xs text-slate-500 sm:inline">

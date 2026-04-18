@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import html2canvas from "html2canvas";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -16,7 +15,6 @@ import {
   Settings,
   ChevronRight,
   Square,
-  Camera,
   BookOpen,
   Save,
 } from "lucide-react";
@@ -32,8 +30,39 @@ import {
 } from "@/lib/timing";
 import { useSession } from "@/context/SessionContext";
 import FeedbackDialog from "@/components/FeedbackDialog";
+import FeedbackEditor from "@/components/FeedbackEditor";
+import {
+  feedbackModeDescription,
+  feedbackModeLabel,
+  LEGACY_FEEDBACK_MODE,
+  normalizeFeedbackMode,
+} from "@/lib/appSettings";
+import { appName } from "@/lib/brand";
+import {
+  cleanFeedback,
+  createEmptyFeedback,
+  hasFinalFeedback,
+  parseFeedbackDraft,
+} from "@/lib/feedback";
 
 type Phase = "idle" | "setup" | "presenting" | "paused" | "finished";
+
+const FEEDBACK_DRAFT_KEY = "juryTimer.feedbackDraft";
+
+function feedbackDraftStorageKey(sessionId: string, studentOrder: number): string {
+  return `${FEEDBACK_DRAFT_KEY}:${sessionId}:${studentOrder}`;
+}
+
+function hasDraftContent(feedback: Feedback): boolean {
+  return (
+    feedback.final.trim().length > 0 ||
+    Object.values(feedback.perSubject).some((note) => note.trim().length > 0)
+  );
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : "Failed to save feedback.";
+}
 
 export default function LiveJuryView({ activeSession }: { activeSession: JurySession }) {
   const navigate = useNavigate();
@@ -53,21 +82,30 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
   const TOTAL = plan.totalSeconds;
   const segments = plan.segments;
   const checkpoints = useMemo(() => checkpointsFor(segments), [segments]);
+  const feedbackMode = normalizeFeedbackMode(activeSession.feedback_mode, LEGACY_FEEDBACK_MODE);
+  const isSynchronousFeedback = feedbackMode === "synchronous";
+  const draftStorageId = useMemo(
+    () => feedbackDraftStorageKey(activeSession.id, nextStudentOrder),
+    [activeSession.id, nextStudentOrder],
+  );
 
   const [phase, setPhase] = useState<Phase>("idle");
   const [studentName, setStudentName] = useState("");
   const [nameInput, setNameInput] = useState("");
-  const [showModal, setShowModal] = useState(false);
+  const [showNameModal, setShowNameModal] = useState(false);
+  const [showFeedbackDialog, setShowFeedbackDialog] = useState(false);
 
   const [setupSeconds, setSetupSeconds] = useState(0);
   const [elapsed, setElapsed] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [feedbackDraft, setFeedbackDraft] = useState<Feedback>(() => createEmptyFeedback());
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
+  const [feedbackSaving, setFeedbackSaving] = useState(false);
 
   const [setupStartTime, setSetupStartTime] = useState<Date | null>(null);
   const [presentationStartTime, setPresentationStartTime] = useState<Date | null>(null);
   const [endTime, setEndTime] = useState<Date | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [showFeedback, setShowFeedback] = useState(false);
 
   const tick = useRef<number | null>(null);
   const audioCtx = useRef<AudioContext | null>(null);
@@ -80,9 +118,14 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
   const remaining = Math.max(TOTAL - elapsed, 0);
   const totalPct = Math.min((elapsed / TOTAL) * 100, 100);
 
-  const stageIdx = useMemo(() => segmentIndexAt(Math.min(elapsed, TOTAL - 1), segments), [elapsed, segments, TOTAL]);
+  const stageIdx = useMemo(
+    () => segmentIndexAt(Math.min(elapsed, TOTAL - 1), segments),
+    [elapsed, segments, TOTAL],
+  );
+  const currentSegment = segments[stageIdx];
+  const activeSubject = currentSegment?.kind === "subject" ? currentSegment.name : null;
   const stageStart = segmentStart(stageIdx, segments);
-  const stageDur = segments[stageIdx].seconds;
+  const stageDur = currentSegment.seconds;
   const stageElapsed = Math.min(Math.max(elapsed - stageStart, 0), stageDur);
   const stageRem = Math.max(stageDur - stageElapsed, 0);
   const stagePct = Math.min((stageElapsed / stageDur) * 100, 100);
@@ -94,10 +137,11 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
 
   useEffect(() => {
     if (phase === "setup") {
-      tick.current = window.setInterval(() => setSetupSeconds((p) => p + 1), 1000);
+      tick.current = window.setInterval(() => setSetupSeconds((previous) => previous + 1), 1000);
     } else if (phase === "presenting") {
-      tick.current = window.setInterval(() => setElapsed((p) => p + 1), 1000);
+      tick.current = window.setInterval(() => setElapsed((previous) => previous + 1), 1000);
     }
+
     return () => {
       if (tick.current) {
         clearInterval(tick.current);
@@ -108,25 +152,82 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
 
   useEffect(() => {
     if (phase !== "presenting") return;
-    const idx = checkpoints.findIndex((pt) => elapsed === pt);
-    if (idx !== -1 && lastCue.current !== idx) {
-      lastCue.current = idx;
-      const isFinalCheckpoint = idx === checkpoints.length - 1;
+    const checkpointIndex = checkpoints.findIndex((checkpoint) => elapsed === checkpoint);
+    if (checkpointIndex !== -1 && lastCue.current !== checkpointIndex) {
+      lastCue.current = checkpointIndex;
+      const isFinalCheckpoint = checkpointIndex === checkpoints.length - 1;
       if (isFinalCheckpoint) beep(audioCtx, soundEnabled, 1100, 260, 3);
       else beep(audioCtx, soundEnabled, 880, 220, 1);
     }
   }, [elapsed, phase, checkpoints, soundEnabled]);
 
-  const openModal = () => {
+  useEffect(() => {
+    try {
+      const rawDraft = localStorage.getItem(draftStorageId);
+      if (!rawDraft) {
+        setFeedbackDraft(createEmptyFeedback());
+        setFeedbackError(null);
+        return;
+      }
+      setFeedbackDraft(parseFeedbackDraft(JSON.parse(rawDraft)));
+      setFeedbackError(null);
+    } catch {
+      setFeedbackDraft(createEmptyFeedback());
+      setFeedbackError(null);
+    }
+  }, [draftStorageId]);
+
+  useEffect(() => {
+    try {
+      if (!hasDraftContent(feedbackDraft)) {
+        localStorage.removeItem(draftStorageId);
+        return;
+      }
+      localStorage.setItem(draftStorageId, JSON.stringify(feedbackDraft));
+    } catch {
+      // Ignore local storage failures so the timer keeps running.
+    }
+  }, [draftStorageId, feedbackDraft]);
+
+  const updateFeedbackDraft = (nextFeedback: Feedback) => {
+    setFeedbackDraft(nextFeedback);
+    if (feedbackError) setFeedbackError(null);
+  };
+
+  const clearFeedbackDraft = (storageKey: string) => {
+    try {
+      localStorage.removeItem(storageKey);
+    } catch {
+      // Ignore local storage failures so the timer keeps running.
+    }
+    setFeedbackDraft(createEmptyFeedback());
+    setFeedbackError(null);
+  };
+
+  const resetStudent = (storageKey: string = draftStorageId) => {
+    setPhase("idle");
+    setStudentName("");
     setNameInput("");
-    setShowModal(true);
+    setSetupSeconds(0);
+    setElapsed(0);
+    setSetupStartTime(null);
+    setPresentationStartTime(null);
+    setEndTime(null);
+    setShowFeedbackDialog(false);
+    lastCue.current = -1;
+    clearFeedbackDraft(storageKey);
+  };
+
+  const openNameModal = () => {
+    setNameInput("");
+    setShowNameModal(true);
     setTimeout(() => inputRef.current?.focus(), 50);
   };
 
   const submitName = async () => {
     if (!nameInput.trim()) return;
     setStudentName(nameInput.trim());
-    setShowModal(false);
+    setShowNameModal(false);
     await ensureAudio(audioCtx);
     setSetupStartTime(new Date());
     setPhase("setup");
@@ -140,62 +241,61 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
 
   const pause = () => setPhase("paused");
   const resume = () => setPhase("presenting");
+
   const finish = () => {
     setEndTime(new Date());
     beep(audioCtx, soundEnabled, 1100, 260, 2);
     setPhase("finished");
   };
 
-  const reset = () => {
-    setPhase("idle");
-    setStudentName("");
-    setSetupSeconds(0);
-    setElapsed(0);
-    setSetupStartTime(null);
-    setPresentationStartTime(null);
-    setEndTime(null);
-    lastCue.current = -1;
-  };
-
-  const handleFeedbackSubmit = async (feedback: Feedback) => {
-    const presentationCapped = Math.min(elapsed, TOTAL);
-    await saveStudentRecord({
-      student_name: studentName,
-      setup_seconds: setupSeconds,
-      presentation_seconds: presentationCapped,
-      overtime_seconds: overtime,
-      time_saved_seconds: phase === "finished" ? Math.max(TOTAL - elapsed, 0) : 0,
-      total_time_used_seconds: setupSeconds + elapsed,
-      setup_started_at: setupStartTime ? setupStartTime.toISOString() : null,
-      presentation_started_at: presentationStartTime ? presentationStartTime.toISOString() : null,
-      ended_at: (endTime ?? new Date()).toISOString(),
-      feedback,
-    });
-    const completedNow = studentsCompleted + 1;
-    if (completedNow >= activeSession.number_of_students) {
-      await completeSession();
-      navigate("/history");
-      return;
+  const persistStudentRecord = async (): Promise<boolean> => {
+    const cleanedFeedback = cleanFeedback(feedbackDraft);
+    if (!hasFinalFeedback(cleanedFeedback)) {
+      setFeedbackError("Final feedback is required before saving.");
+      return false;
     }
-    reset();
+
+    const storageKeyAtSave = draftStorageId;
+
+    try {
+      setFeedbackSaving(true);
+      setFeedbackError(null);
+
+      await saveStudentRecord({
+        student_name: studentName,
+        setup_seconds: setupSeconds,
+        presentation_seconds: Math.min(elapsed, TOTAL),
+        overtime_seconds: overtime,
+        time_saved_seconds: phase === "finished" ? Math.max(TOTAL - elapsed, 0) : 0,
+        total_time_used_seconds: setupSeconds + elapsed,
+        setup_started_at: setupStartTime ? setupStartTime.toISOString() : null,
+        presentation_started_at: presentationStartTime ? presentationStartTime.toISOString() : null,
+        ended_at: (endTime ?? new Date()).toISOString(),
+        feedback: cleanedFeedback,
+      });
+
+      clearFeedbackDraft(storageKeyAtSave);
+
+      const completedNow = studentsCompleted + 1;
+      if (completedNow >= activeSession.number_of_students) {
+        await completeSession();
+        navigate("/history");
+        return true;
+      }
+
+      resetStudent(storageKeyAtSave);
+      return true;
+    } catch (err) {
+      setFeedbackError(errorMessage(err));
+      return false;
+    } finally {
+      setFeedbackSaving(false);
+    }
   };
 
   const isActive = phase === "presenting" || phase === "paused" || phase === "finished";
 
-  const takeScreenshot = async () => {
-    if (!pageRef.current) return;
-    const canvas = await html2canvas(pageRef.current, {
-      backgroundColor: "#f1f5f9",
-      scale: 2,
-      useCORS: true,
-    });
-    const link = document.createElement("a");
-    link.download = `jury-timer${studentName ? "-" + studentName.replace(/\s+/g, "-") : ""}.png`;
-    link.href = canvas.toDataURL("image/png");
-    link.click();
-  };
-
-  const contextLine = `${activeSession.department} \u2022 ${activeSession.section} \u2022 Sem ${activeSession.semester} \u2022 ${activeSession.academic_year}`;
+  const contextLine = `${activeSession.jury_type} \u2022 ${activeSession.department} \u2022 ${activeSession.section} \u2022 Sem ${activeSession.semester} \u2022 ${activeSession.academic_year}`;
   const perStudentLabel = `${fmt(TOTAL)} per student`;
 
   return (
@@ -208,7 +308,9 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                 <Clock3 className="h-4 w-4" />
                 <span className="text-xs font-medium uppercase tracking-widest">Jury Day</span>
               </div>
-              <h1 className="text-2xl font-bold leading-tight tracking-tight text-slate-900 md:text-4xl">Jury Timer</h1>
+              <h1 className="text-2xl font-bold leading-tight tracking-tight text-slate-900 md:text-4xl">
+                {appName}
+              </h1>
               <p className="mt-1.5 text-sm leading-relaxed text-slate-500">
                 {contextLine} &bull; {perStudentLabel}
               </p>
@@ -232,19 +334,12 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                   <span className="text-xs font-semibold">Setup {fmt(setupSeconds)}</span>
                 </div>
               )}
-              <div className="tabular-nums text-sm font-medium text-slate-400">
-                {fmtClock(currentTime)}
-              </div>
+              <div className="tabular-nums text-sm font-medium text-slate-400">{fmtClock(currentTime)}</div>
               <button
-                onClick={takeScreenshot}
-                className="rounded-full p-2.5 text-slate-500 transition hover:bg-slate-100"
-                title="Save screenshot"
-              >
-                <Camera className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => setSoundEnabled((v) => !v)}
-                className={`rounded-full p-2.5 transition ${soundEnabled ? "text-slate-500 hover:bg-slate-100" : "bg-slate-200 text-slate-400"}`}
+                onClick={() => setSoundEnabled((value) => !value)}
+                className={`rounded-full p-2.5 transition ${
+                  soundEnabled ? "text-slate-500 hover:bg-slate-100" : "bg-slate-200 text-slate-400"
+                }`}
               >
                 <Volume2 className="h-4 w-4" />
               </button>
@@ -266,18 +361,21 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                 <Badge variant="secondary" className="rounded-full px-4 py-1 text-sm">
                   Final Feedback {fmt(plan.feedbackSeconds)}
                 </Badge>
+                <Badge variant="outline" className="rounded-full px-4 py-1 text-sm">
+                  {feedbackModeLabel(feedbackMode)} mode
+                </Badge>
               </div>
               <div className="flex flex-wrap justify-center gap-1.5 px-6">
-                {activeSession.subjects.map((s, i) => (
+                {activeSession.subjects.map((subject, index) => (
                   <span
-                    key={i}
+                    key={index}
                     className="flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600"
                   >
-                    <BookOpen className="h-3 w-3" /> {s}
+                    <BookOpen className="h-3 w-3" /> {subject}
                   </span>
                 ))}
               </div>
-              <Button size="lg" className="rounded-2xl px-10 py-6 text-lg" onClick={openModal}>
+              <Button size="lg" className="rounded-2xl px-10 py-6 text-lg" onClick={openNameModal}>
                 <Play className="mr-2 h-6 w-6" />
                 Start Prep Timer
               </Button>
@@ -311,7 +409,7 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
         )}
 
         {isActive && (
-          <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
             <Card className="rounded-3xl border-0 shadow-sm">
               <CardHeader className="pb-4">
                 <CardTitle className="text-lg md:text-xl">Live Timer</CardTitle>
@@ -332,7 +430,7 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                       <div className="mt-2 text-5xl font-bold tabular-nums md:text-7xl">{fmt(elapsed)}</div>
                       {remaining > 0 && (
                         <div className="mt-1 text-sm text-emerald-200">
-                          {fmt(remaining)} remaining &mdash; finished early
+                          {fmt(remaining)} remaining - finished early
                         </div>
                       )}
                     </>
@@ -369,12 +467,14 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                       <div>
                         <div className="text-xs uppercase tracking-widest text-slate-400">Current Segment</div>
                         <div className="mt-1.5 text-xl font-semibold leading-snug text-slate-900">
-                          {segments[stageIdx].name}
+                          {currentSegment.name}
                         </div>
                       </div>
                       <div className="text-right">
                         <div className="text-xs text-slate-400">Remaining</div>
-                        <div className="mt-0.5 text-2xl font-bold tabular-nums text-slate-900">{fmt(stageRem)}</div>
+                        <div className="mt-0.5 text-2xl font-bold tabular-nums text-slate-900">
+                          {fmt(stageRem)}
+                        </div>
                       </div>
                     </div>
                     <div className="mt-4 space-y-1.5">
@@ -392,13 +492,15 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                     <div className="flex items-center justify-between gap-6">
                       <div>
                         <div className="text-xs font-medium uppercase tracking-widest text-red-500">
-                          Time&rsquo;s Up
+                          Time&apos;s Up
                         </div>
                         <div className="mt-1.5 text-xl font-semibold leading-snug text-red-700">Overtime</div>
                       </div>
                       <div className="text-right">
                         <div className="text-xs text-red-500">Extra Time</div>
-                        <div className="mt-0.5 text-3xl font-bold tabular-nums text-red-700">+{fmt(overtime)}</div>
+                        <div className="mt-0.5 text-3xl font-bold tabular-nums text-red-700">
+                          +{fmt(overtime)}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -407,19 +509,32 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                 <div className="flex items-center gap-4 pt-3">
                   {phase === "finished" ? (
                     <>
-                      <Button
-                        size="lg"
-                        className="rounded-2xl px-10 py-6 text-lg"
-                        onClick={() => setShowFeedback(true)}
-                      >
-                        <Save className="mr-2 h-5 w-5" /> Save Feedback & Continue
-                      </Button>
+                      {isSynchronousFeedback ? (
+                        <Button
+                          size="lg"
+                          className="rounded-2xl px-10 py-6 text-lg"
+                          onClick={() => void persistStudentRecord()}
+                          disabled={feedbackSaving}
+                        >
+                          <Save className="mr-2 h-5 w-5" />
+                          {feedbackSaving ? "Saving..." : "Save Feedback & Continue"}
+                        </Button>
+                      ) : (
+                        <Button
+                          size="lg"
+                          className="rounded-2xl px-10 py-6 text-lg"
+                          onClick={() => setShowFeedbackDialog(true)}
+                        >
+                          <Save className="mr-2 h-5 w-5" /> Add Feedback & Continue
+                        </Button>
+                      )}
                       <div className="ml-auto">
                         <Button
                           size="lg"
                           variant="outline"
                           className="rounded-2xl px-8 py-6 text-lg"
-                          onClick={reset}
+                          onClick={() => resetStudent()}
+                          disabled={feedbackSaving}
                         >
                           <RotateCcw className="mr-2 h-5 w-5" /> Discard
                         </Button>
@@ -429,7 +544,12 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                     <>
                       <div className="flex gap-4">
                         {phase === "presenting" ? (
-                          <Button size="lg" variant="secondary" className="rounded-2xl px-8 py-6 text-lg" onClick={pause}>
+                          <Button
+                            size="lg"
+                            variant="secondary"
+                            className="rounded-2xl px-8 py-6 text-lg"
+                            onClick={pause}
+                          >
                             <Pause className="mr-2 h-5 w-5" /> Pause
                           </Button>
                         ) : (
@@ -447,7 +567,12 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                         </Button>
                       </div>
                       <div className="ml-auto">
-                        <Button size="lg" variant="outline" className="rounded-2xl px-8 py-6 text-lg" onClick={reset}>
+                        <Button
+                          size="lg"
+                          variant="outline"
+                          className="rounded-2xl px-8 py-6 text-lg"
+                          onClick={() => resetStudent()}
+                        >
                           <RotateCcw className="mr-2 h-5 w-5" /> Reset
                         </Button>
                       </div>
@@ -456,10 +581,43 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                 </div>
 
                 <div className="rounded-2xl border border-dashed border-slate-300 p-5 text-sm leading-relaxed text-slate-500">
-                  One click starts the full {fmt(TOTAL)} cycle. The app beeps once after each subject segment and gives a
-                  triple beep when time is up. The timer continues counting overtime so students can see how much extra
-                  time was used.
+                  One click starts the full {fmt(TOTAL)} cycle. The app beeps once after each subject
+                  segment and gives a triple beep when time is up. The timer continues counting overtime
+                  so students can see how much extra time was used.
                 </div>
+
+                {isSynchronousFeedback && (
+                  <div className="space-y-4 rounded-3xl bg-slate-50 p-6 ring-1 ring-slate-200">
+                    <div>
+                      <h3 className="text-lg font-semibold text-slate-900">Feedback Draft</h3>
+                    </div>
+
+                    <div className="rounded-2xl bg-white p-4 text-sm text-slate-600 ring-1 ring-slate-200">
+                      {phase === "finished"
+                        ? "Review the live notes, then save once for this student."
+                        : "Write notes during the jury. They stay local on this device until you save or discard the student."}
+                    </div>
+
+                    <FeedbackEditor
+                      feedback={feedbackDraft}
+                      onChange={updateFeedbackDraft}
+                      subjects={activeSession.subjects}
+                      activeSubject={activeSubject}
+                      finalRequired
+                      compact
+                    />
+
+                    {feedbackError && (
+                      <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                        {feedbackError}
+                      </div>
+                    )}
+
+                    <div className="text-xs leading-relaxed text-slate-400">
+                      {feedbackModeDescription(feedbackMode)}
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -476,7 +634,9 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                     </div>
                     <div className="flex justify-between leading-relaxed">
                       <span className="text-slate-500">Presented</span>
-                      <span className="tabular-nums font-medium text-slate-700">{fmtClock(presentationStartTime)}</span>
+                      <span className="tabular-nums font-medium text-slate-700">
+                        {fmtClock(presentationStartTime)}
+                      </span>
                     </div>
                     <div className="flex justify-between leading-relaxed">
                       <span className="text-slate-500">{endTime ? "Ended" : "Now"}</span>
@@ -485,7 +645,7 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                       </span>
                     </div>
 
-                    <div className="border-t border-slate-200 my-1" />
+                    <div className="my-1 border-t border-slate-200" />
 
                     <div className="flex justify-between leading-relaxed">
                       <span className="text-slate-500">Setup Time</span>
@@ -510,7 +670,7 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                       </div>
                     )}
 
-                    <div className="border-t border-slate-200 my-1" />
+                    <div className="my-1 border-t border-slate-200" />
 
                     <div className="flex justify-between text-base font-bold leading-relaxed">
                       <span className="text-slate-800">Total Time</span>
@@ -533,14 +693,15 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                     <span className="text-sm font-bold tabular-nums text-amber-700">{fmt(setupSeconds)}</span>
                   </div>
 
-                  {segments.map((seg, i) => {
-                    const start = segmentStart(i, segments);
-                    const end = start + seg.seconds;
+                  {segments.map((segment, index) => {
+                    const start = segmentStart(index, segments);
+                    const end = start + segment.seconds;
                     const done = elapsed >= end;
                     const active = elapsed >= start && elapsed < end && phase !== "finished";
+
                     return (
                       <div
-                        key={seg.name + i}
+                        key={`${segment.name}-${index}`}
                         className={`flex items-center justify-between rounded-2xl px-5 py-3.5 ring-1 transition-all ${
                           active
                             ? "bg-slate-900 text-white ring-slate-900"
@@ -550,13 +711,13 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                         }`}
                       >
                         <div>
-                          <div className="text-sm font-semibold leading-snug">{seg.name}</div>
+                          <div className="text-sm font-semibold leading-snug">{segment.name}</div>
                           <div
                             className={`mt-0.5 text-xs leading-normal ${
                               active ? "text-slate-300" : "text-slate-400"
                             }`}
                           >
-                            {fmt(seg.seconds)}
+                            {fmt(segment.seconds)}
                           </div>
                         </div>
                         <Badge
@@ -586,22 +747,32 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
       </div>
 
       <FeedbackDialog
-        open={showFeedback}
-        onOpenChange={setShowFeedback}
+        open={showFeedbackDialog}
+        onOpenChange={(open) => {
+          if (!open) setFeedbackError(null);
+          setShowFeedbackDialog(open);
+        }}
         studentName={studentName}
         subjects={activeSession.subjects}
-        onSubmit={handleFeedbackSubmit}
+        feedback={feedbackDraft}
+        onChange={updateFeedbackDraft}
+        saving={feedbackSaving}
+        error={feedbackError}
+        onSubmit={async () => {
+          const saved = await persistStudentRecord();
+          if (saved) setShowFeedbackDialog(false);
+        }}
       />
 
-      {showModal && (
+      {showNameModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-xl">
             <h2 className="text-2xl font-bold text-slate-900">Student Name</h2>
-            <p className="mt-1 text-sm text-slate-500">Enter the student&rsquo;s name to begin setup.</p>
+            <p className="mt-1 text-sm text-slate-500">Enter the student&apos;s name to begin setup.</p>
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                submitName();
+                void submitName();
               }}
             >
               <input
@@ -622,7 +793,7 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                   size="lg"
                   variant="outline"
                   className="rounded-2xl"
-                  onClick={() => setShowModal(false)}
+                  onClick={() => setShowNameModal(false)}
                 >
                   Cancel
                 </Button>

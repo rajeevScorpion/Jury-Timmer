@@ -1,16 +1,32 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Plus, Trash2, ArrowUp, ArrowDown, Play } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Combobox } from "@/components/ui/combobox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useSession } from "@/context/SessionContext";
 import { computePerStudentPlan, TimingConfigError } from "@/lib/timing";
 import { fmt } from "@/lib/timeFormat";
+import {
+  DEFAULT_FEEDBACK_MODE,
+  feedbackModeDescription,
+  feedbackModeLabel,
+  feedbackModeOptions,
+  fetchDefaultFeedbackMode,
+} from "@/lib/appSettings";
+import type { FeedbackMode } from "@/types/session";
 
 const SECTIONS = ["A", "B", "C", "D", "E"];
 const SEMESTERS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"];
+const JURY_TYPES = ["Mid Sem", "End Sem"];
 
 function academicYearOptions(now: Date): string[] {
   const start = now.getFullYear() - 1;
@@ -25,6 +41,7 @@ export default function DaySetupForm() {
   const navigate = useNavigate();
   const { createSession } = useSession();
 
+  const [juryType, setJuryType] = useState("Mid Sem");
   const [department, setDepartment] = useState("");
   const [section, setSection] = useState("");
   const [semester, setSemester] = useState("");
@@ -34,16 +51,19 @@ export default function DaySetupForm() {
   const [studentCount, setStudentCount] = useState(6);
   const [bufferMinutes, setBufferMinutes] = useState(5);
   const [feedbackMinutes, setFeedbackMinutes] = useState(2);
+  const [feedbackMode, setFeedbackMode] = useState<FeedbackMode>(DEFAULT_FEEDBACK_MODE);
   const [subjects, setSubjects] = useState<string[]>(["", "", ""]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [settingsHint, setSettingsHint] = useState("Loading admin default...");
+  const feedbackModeTouched = useRef(false);
 
   const ayOptions = useMemo(() => academicYearOptions(new Date()), []);
 
   const totalSeconds = hours * 3600 + minutes * 60;
   const bufferSeconds = bufferMinutes * 60;
   const feedbackSeconds = feedbackMinutes * 60;
-  const cleanSubjects = subjects.map((s) => s.trim()).filter(Boolean);
+  const cleanSubjects = subjects.map((subject) => subject.trim()).filter(Boolean);
 
   const preview = useMemo(() => {
     if (!cleanSubjects.length || studentCount < 1 || totalSeconds <= 0) return null;
@@ -60,32 +80,58 @@ export default function DaySetupForm() {
     }
   }, [totalSeconds, studentCount, bufferSeconds, cleanSubjects, feedbackSeconds]);
 
-  const updateSubject = (i: number, v: string) =>
-    setSubjects((prev) => prev.map((s, idx) => (idx === i ? v : s)));
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      const mode = await fetchDefaultFeedbackMode();
+      if (cancelled) return;
+      if (!feedbackModeTouched.current) setFeedbackMode(mode);
+      setSettingsHint("Prefilled from Admin default. You can override it for this jury day.");
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const updateSubject = (index: number, value: string) =>
+    setSubjects((prev) => prev.map((subject, currentIndex) => (currentIndex === index ? value : subject)));
+
   const addSubject = () => setSubjects((prev) => [...prev, ""]);
-  const removeSubject = (i: number) =>
-    setSubjects((prev) => prev.filter((_, idx) => idx !== i));
-  const moveSubject = (i: number, dir: -1 | 1) =>
+
+  const removeSubject = (index: number) =>
+    setSubjects((prev) => prev.filter((_, currentIndex) => currentIndex !== index));
+
+  const moveSubject = (index: number, direction: -1 | 1) =>
     setSubjects((prev) => {
-      const j = i + dir;
-      if (j < 0 || j >= prev.length) return prev;
+      const nextIndex = index + direction;
+      if (nextIndex < 0 || nextIndex >= prev.length) return prev;
       const copy = [...prev];
-      [copy[i], copy[j]] = [copy[j], copy[i]];
+      [copy[index], copy[nextIndex]] = [copy[nextIndex], copy[index]];
       return copy;
     });
+
+  const handleFeedbackModeChange = (value: string) => {
+    feedbackModeTouched.current = true;
+    setFeedbackMode(value as FeedbackMode);
+  };
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    if (!juryType.trim()) return setError("Jury type is required.");
     if (!department.trim()) return setError("Department is required.");
     if (!section.trim()) return setError("Section is required.");
     if (!semester.trim()) return setError("Semester is required.");
     if (!academicYear.trim()) return setError("Academic year is required.");
     if (cleanSubjects.length < 1) return setError("Add at least one subject.");
     if (studentCount < 1) return setError("Need at least one student.");
+
     try {
       setSubmitting(true);
       await createSession({
+        jury_type: juryType.trim(),
         department: department.trim(),
         section: section.trim(),
         semester: semester.trim(),
@@ -95,6 +141,7 @@ export default function DaySetupForm() {
         buffer_seconds: bufferSeconds,
         subjects: cleanSubjects,
         feedback_seconds: feedbackSeconds,
+        feedback_mode: feedbackMode,
       });
       navigate("/jury");
     } catch (err) {
@@ -113,6 +160,15 @@ export default function DaySetupForm() {
             <CardTitle className="text-xl">Jury Day</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-5 md:grid-cols-2">
+            <Field label="Jury Type">
+              <Combobox
+                value={juryType}
+                onChange={setJuryType}
+                options={JURY_TYPES}
+                placeholder="Select jury type"
+                customPlaceholder="Enter custom jury type"
+              />
+            </Field>
             <Field label="Department">
               <Input
                 value={department}
@@ -121,13 +177,31 @@ export default function DaySetupForm() {
               />
             </Field>
             <Field label="Section">
-              <Combobox value={section} onChange={setSection} options={SECTIONS} placeholder="Select section" customPlaceholder="Custom section" />
+              <Combobox
+                value={section}
+                onChange={setSection}
+                options={SECTIONS}
+                placeholder="Select section"
+                customPlaceholder="Custom section"
+              />
             </Field>
             <Field label="Semester">
-              <Combobox value={semester} onChange={setSemester} options={SEMESTERS} placeholder="Select semester" customPlaceholder="Custom semester" />
+              <Combobox
+                value={semester}
+                onChange={setSemester}
+                options={SEMESTERS}
+                placeholder="Select semester"
+                customPlaceholder="Custom semester"
+              />
             </Field>
             <Field label="Academic Year">
-              <Combobox value={academicYear} onChange={setAcademicYear} options={ayOptions} placeholder="Select year" customPlaceholder="e.g. 26-27" />
+              <Combobox
+                value={academicYear}
+                onChange={setAcademicYear}
+                options={ayOptions}
+                placeholder="Select year"
+                customPlaceholder="e.g. 26-27"
+              />
             </Field>
           </CardContent>
         </Card>
@@ -154,7 +228,9 @@ export default function DaySetupForm() {
                     min={0}
                     max={59}
                     value={minutes}
-                    onChange={(e) => setMinutes(Math.max(0, Math.min(59, Number(e.target.value) || 0)))}
+                    onChange={(e) =>
+                      setMinutes(Math.max(0, Math.min(59, Number(e.target.value) || 0)))
+                    }
                   />
                   <div className="mt-1 text-xs text-slate-400">Minutes</div>
                 </div>
@@ -184,6 +260,24 @@ export default function DaySetupForm() {
                 onChange={(e) => setFeedbackMinutes(Math.max(0, Number(e.target.value) || 0))}
               />
             </Field>
+            <Field label="Feedback mode">
+              <Select value={feedbackMode} onValueChange={handleFeedbackModeChange}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select feedback mode" />
+                </SelectTrigger>
+                <SelectContent>
+                  {feedbackModeOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="mt-1 space-y-1 text-xs text-slate-400">
+                <p>{settingsHint}</p>
+                <p>{feedbackModeDescription(feedbackMode)}</p>
+              </div>
+            </Field>
           </CardContent>
         </Card>
 
@@ -195,18 +289,32 @@ export default function DaySetupForm() {
             </Button>
           </CardHeader>
           <CardContent className="space-y-3">
-            {subjects.map((s, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <div className="w-8 text-center text-xs font-medium text-slate-400">{i + 1}</div>
+            {subjects.map((subject, index) => (
+              <div key={index} className="flex items-center gap-2">
+                <div className="w-8 text-center text-xs font-medium text-slate-400">{index + 1}</div>
                 <Input
-                  value={s}
-                  onChange={(e) => updateSubject(i, e.target.value)}
-                  placeholder={`Subject ${i + 1}`}
+                  value={subject}
+                  onChange={(e) => updateSubject(index, e.target.value)}
+                  placeholder={`Subject ${index + 1}`}
                 />
-                <Button type="button" variant="outline" size="sm" className="rounded-full px-2" onClick={() => moveSubject(i, -1)} disabled={i === 0}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="rounded-full px-2"
+                  onClick={() => moveSubject(index, -1)}
+                  disabled={index === 0}
+                >
                   <ArrowUp className="h-4 w-4" />
                 </Button>
-                <Button type="button" variant="outline" size="sm" className="rounded-full px-2" onClick={() => moveSubject(i, 1)} disabled={i === subjects.length - 1}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="rounded-full px-2"
+                  onClick={() => moveSubject(index, 1)}
+                  disabled={index === subjects.length - 1}
+                >
                   <ArrowDown className="h-4 w-4" />
                 </Button>
                 <Button
@@ -214,7 +322,7 @@ export default function DaySetupForm() {
                   variant="outline"
                   size="sm"
                   className="rounded-full px-2 text-red-600 hover:bg-red-50 hover:text-red-700"
-                  onClick={() => removeSubject(i)}
+                  onClick={() => removeSubject(index)}
                   disabled={subjects.length <= 1}
                 >
                   <Trash2 className="h-4 w-4" />
@@ -229,11 +337,15 @@ export default function DaySetupForm() {
 
         {preview && (
           <Card className="rounded-3xl border-0 bg-slate-50 shadow-none ring-1 ring-slate-200">
-            <CardContent className="grid gap-3 py-5 text-sm md:grid-cols-4">
+            <CardContent className="grid gap-3 py-5 text-sm md:grid-cols-5">
               <Stat label="Per student" value={fmt(preview.totalSeconds)} />
               <Stat label="Per subject" value={fmt(preview.perSubjectSeconds)} />
               <Stat label="Final feedback" value={fmt(preview.feedbackSeconds)} />
-              <Stat label="Buffer × (n-1)" value={fmt(bufferSeconds * Math.max(studentCount - 1, 0))} />
+              <Stat label="Feedback mode" value={feedbackModeLabel(feedbackMode)} />
+              <Stat
+                label="Buffer x (n-1)"
+                value={fmt(bufferSeconds * Math.max(studentCount - 1, 0))}
+              />
             </CardContent>
           </Card>
         )}
@@ -247,7 +359,7 @@ export default function DaySetupForm() {
         <div className="flex justify-end">
           <Button type="submit" size="lg" className="rounded-2xl px-10" disabled={submitting}>
             <Play className="mr-2 h-5 w-5" />
-            {submitting ? "Creating…" : "Start Jury Day"}
+            {submitting ? "Creating..." : "Start Jury Day"}
           </Button>
         </div>
       </form>
