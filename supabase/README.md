@@ -4,6 +4,7 @@
 
 Copy `.env.example` at the repo root to `.env.local` and fill in:
 
+- `App_Name` - visible application name/brand label (defaults to `Evalve`)
 - `VITE_SUPABASE_URL` - from Supabase dashboard -> Project Settings -> API
 - `VITE_SUPABASE_ANON_KEY` - same page
 - `VITE_IS_SUPER_ADMIN=true` only for the environment that should expose the Admin page
@@ -45,3 +46,9 @@ Future migrations should continue to ship as forward + rollback pairs.
 - `app_settings` is readable and writable by authenticated users.
 
 Phase 2 note: because super admin access is currently controlled only by `VITE_IS_SUPER_ADMIN` in the frontend, `app_settings` is not protected by a true backend role yet. Document this clearly until a real role system is added.
+
+## 5. SPA routing on Vercel
+
+- The app uses `BrowserRouter`, so deep links such as `/history/SESSION_ID` need a rewrite back to `index.html`.
+- Keep `vercel.json` in the repo when deploying to Vercel. It preserves real files first, then falls back all client routes to the SPA entrypoint.
+- Without that fallback, refreshing nested routes will return a Vercel `404: NOT_FOUND`.

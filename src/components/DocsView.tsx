@@ -14,7 +14,24 @@ export default function DocsView() {
       </header>
 
       <Section icon={<History className="h-4 w-4" />} title="Changelog">
-        <Version label="Phase 2" badge="current">
+        <Version label="Phase 4" badge="current">
+          <ul className="list-disc space-y-1 pl-5 text-sm text-slate-700">
+            <li>History now separates open jury days from completed ones.</li>
+            <li>Completed jury days open on a dedicated read-only review page with all saved student feedback.</li>
+            <li>Open jury days can be formally closed from History using the Complete Jury action.</li>
+            <li>Vercel deployments now include an SPA fallback so refreshing deep links does not return a 404.</li>
+          </ul>
+        </Version>
+
+        <Version label="Phase 3">
+          <ul className="list-disc space-y-1 pl-5 text-sm text-slate-700">
+            <li>Jury type can be chosen per day as Mid Sem, End Sem, or a custom value.</li>
+            <li>Branding is env-driven through <code className="rounded bg-slate-100 px-1.5 py-0.5">App_Name</code>.</li>
+            <li>Navigation uses the shared lowercase pill brand mark across login and signed-in views.</li>
+          </ul>
+        </Version>
+
+        <Version label="Phase 2">
           <ul className="list-disc space-y-1 pl-5 text-sm text-slate-700">
             <li>Two feedback modes: synchronous live notes and the original post-jury modal flow.</li>
             <li>Admin page for the global default feedback mode.</li>
@@ -51,7 +68,7 @@ export default function DocsView() {
           </li>
           <li>
             Routing via <code className="rounded bg-slate-100 px-1.5 py-0.5">react-router-dom</code>: login gate
-            wraps everything, then Live / New Day / History / Docs / Admin.
+            wraps everything, then Live / New Day / History / History Detail / Docs / Admin.
           </li>
           <li>
             Two contexts: <code className="rounded bg-slate-100 px-1.5 py-0.5">AuthContext</code> (Supabase session)
@@ -135,6 +152,14 @@ export default function DocsView() {
             Timer behavior is driven end-to-end by{" "}
             <code className="rounded bg-slate-100 px-1.5 py-0.5">computePerStudentPlan</code> - changing the time
             model is a one-file change.
+          </li>
+          <li>
+            Keep <code className="rounded bg-slate-100 px-1.5 py-0.5">vercel.json</code> in Vercel deployments so
+            BrowserRouter deep links such as History detail pages refresh back into the app instead of hitting a 404.
+          </li>
+          <li>
+            Set <code className="rounded bg-slate-100 px-1.5 py-0.5">App_Name</code> in the environment to rename the
+            visible brand without editing the UI code.
           </li>
         </ul>
       </Section>
