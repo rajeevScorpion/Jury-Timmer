@@ -295,15 +295,14 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
 
   const isActive = phase === "presenting" || phase === "paused" || phase === "finished";
 
-  const contextLine = `${activeSession.jury_type} \u2022 ${activeSession.department} \u2022 ${activeSession.section} \u2022 Sem ${activeSession.semester} \u2022 ${activeSession.academic_year}`;
   const perStudentLabel = `${fmt(TOTAL)} per student`;
 
   return (
-    <div ref={pageRef} className="p-4 md:p-8 lg:p-10">
+    <div ref={pageRef} className="p-3 sm:p-4 md:p-8 lg:p-10">
       <div className="mx-auto max-w-6xl space-y-5">
-        <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200 md:px-8 md:py-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
+        <div className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-slate-200 sm:p-6 md:px-8 md:py-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0 max-w-3xl">
               <div className="mb-1 flex items-center gap-2 text-slate-500">
                 <Clock3 className="h-4 w-4" />
                 <span className="text-xs font-medium uppercase tracking-widest">Jury Day</span>
@@ -311,21 +310,33 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
               <h1 className="text-2xl font-bold leading-tight tracking-tight text-slate-900 md:text-4xl">
                 {appName}
               </h1>
-              <p className="mt-1.5 text-sm leading-relaxed text-slate-500">
-                {contextLine} &bull; {perStudentLabel}
-              </p>
+              <p className="mt-2 text-base font-semibold text-slate-800">{activeSession.department}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Badge variant="outline" className="rounded-full px-3 py-1 text-xs font-medium">
+                  {activeSession.jury_type}
+                </Badge>
+                <Badge variant="outline" className="rounded-full px-3 py-1 text-xs font-medium">
+                  {activeSession.section} / Sem {activeSession.semester}
+                </Badge>
+                <Badge variant="outline" className="rounded-full px-3 py-1 text-xs font-medium">
+                  {activeSession.academic_year}
+                </Badge>
+                <Badge variant="secondary" className="rounded-full px-3 py-1 text-xs font-medium">
+                  {perStudentLabel}
+                </Badge>
+              </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2.5 lg:justify-end">
               <div className="flex items-center gap-2 rounded-full bg-slate-100 px-4 py-2 text-slate-700">
                 <span className="text-xs font-semibold uppercase tracking-widest">
                   Student {nextStudentOrder} of {activeSession.number_of_students}
                 </span>
               </div>
               {studentName && (
-                <div className="flex items-center gap-2 rounded-full bg-slate-900 px-5 py-2 text-white">
+                <div className="flex min-w-0 items-center gap-2 rounded-full bg-slate-900 px-5 py-2 text-white">
                   <User className="h-4 w-4" />
-                  <span className="text-sm font-semibold">{studentName}</span>
+                  <span className="truncate text-sm font-semibold">{studentName}</span>
                 </div>
               )}
               {phase !== "idle" && setupSeconds > 0 && (
@@ -349,8 +360,8 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
 
         {phase === "idle" && (
           <Card className="rounded-3xl border-0 shadow-sm">
-            <CardContent className="flex flex-col items-center gap-6 py-16 text-center">
-              <div className="rounded-3xl bg-slate-900 px-12 py-10 text-white shadow-inner md:px-20 md:py-14">
+            <CardContent className="flex flex-col items-center gap-6 px-4 py-12 text-center sm:py-16">
+              <div className="rounded-3xl bg-slate-900 px-8 py-8 text-white shadow-inner sm:px-12 sm:py-10 md:px-20 md:py-14">
                 <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Ready</div>
                 <div className="mt-2 text-6xl font-bold tabular-nums md:text-8xl">{fmt(TOTAL)}</div>
               </div>
@@ -365,7 +376,7 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                   {feedbackModeLabel(feedbackMode)} mode
                 </Badge>
               </div>
-              <div className="flex flex-wrap justify-center gap-1.5 px-6">
+              <div className="flex flex-wrap justify-center gap-1.5 sm:px-6">
                 {activeSession.subjects.map((subject, index) => (
                   <span
                     key={index}
@@ -375,7 +386,11 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                   </span>
                 ))}
               </div>
-              <Button size="lg" className="rounded-2xl px-10 py-6 text-lg" onClick={openNameModal}>
+              <Button
+                size="lg"
+                className="w-full rounded-2xl px-6 py-4 text-lg sm:w-auto sm:px-10 sm:py-6"
+                onClick={openNameModal}
+              >
                 <Play className="mr-2 h-6 w-6" />
                 Start Prep Timer
               </Button>
@@ -385,8 +400,8 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
 
         {phase === "setup" && (
           <Card className="rounded-3xl border-0 shadow-sm">
-            <CardContent className="flex flex-col items-center gap-6 py-16 text-center">
-              <div className="rounded-3xl bg-amber-500 px-12 py-10 text-white shadow-inner md:px-20 md:py-14">
+            <CardContent className="flex flex-col items-center gap-6 px-4 py-12 text-center sm:py-16">
+              <div className="rounded-3xl bg-amber-500 px-8 py-8 text-white shadow-inner sm:px-12 sm:py-10 md:px-20 md:py-14">
                 <div className="flex items-center justify-center gap-2 text-xs uppercase tracking-[0.2em] text-amber-100">
                   <Settings className="h-4 w-4 animate-spin" style={{ animationDuration: "3s" }} />
                   <span>Setting Up</span>
@@ -398,7 +413,7 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
               </p>
               <Button
                 size="lg"
-                className="rounded-2xl bg-emerald-600 px-10 text-base hover:bg-emerald-700"
+                className="w-full rounded-2xl bg-emerald-600 px-6 py-4 text-base hover:bg-emerald-700 sm:w-auto sm:px-10"
                 onClick={startPresentation}
               >
                 <ChevronRight className="mr-2 h-5 w-5" />
@@ -414,9 +429,9 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
               <CardHeader className="pb-4">
                 <CardTitle className="text-lg md:text-xl">Live Timer</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-6">
+              <CardContent className="space-y-5 sm:space-y-6">
                 <div
-                  className={`rounded-3xl px-8 py-8 text-center text-white shadow-inner md:py-12 ${
+                  className={`rounded-3xl px-5 py-6 text-center text-white shadow-inner sm:px-8 sm:py-8 md:py-12 ${
                     phase === "finished"
                       ? "bg-emerald-700"
                       : isOvertime
@@ -463,14 +478,14 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
 
                 {!isOvertime && phase !== "finished" && (
                   <div className="rounded-2xl bg-slate-50 p-5 ring-1 ring-slate-200">
-                    <div className="flex items-center justify-between gap-6">
-                      <div>
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
                         <div className="text-xs uppercase tracking-widest text-slate-400">Current Segment</div>
                         <div className="mt-1.5 text-xl font-semibold leading-snug text-slate-900">
                           {currentSegment.name}
                         </div>
                       </div>
-                      <div className="text-right">
+                      <div className="sm:text-right">
                         <div className="text-xs text-slate-400">Remaining</div>
                         <div className="mt-0.5 text-2xl font-bold tabular-nums text-slate-900">
                           {fmt(stageRem)}
@@ -489,14 +504,14 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
 
                 {isOvertime && phase !== "finished" && (
                   <div className="rounded-2xl bg-red-50 p-5 ring-1 ring-red-200">
-                    <div className="flex items-center justify-between gap-6">
-                      <div>
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
                         <div className="text-xs font-medium uppercase tracking-widest text-red-500">
                           Time&apos;s Up
                         </div>
                         <div className="mt-1.5 text-xl font-semibold leading-snug text-red-700">Overtime</div>
                       </div>
-                      <div className="text-right">
+                      <div className="sm:text-right">
                         <div className="text-xs text-red-500">Extra Time</div>
                         <div className="mt-0.5 text-3xl font-bold tabular-nums text-red-700">
                           +{fmt(overtime)}
@@ -506,13 +521,13 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                   </div>
                 )}
 
-                <div className="flex items-center gap-4 pt-3">
+                <div className="grid gap-3 pt-3 sm:grid-cols-2 xl:grid-cols-3">
                   {phase === "finished" ? (
                     <>
                       {isSynchronousFeedback ? (
                         <Button
                           size="lg"
-                          className="rounded-2xl px-10 py-6 text-lg"
+                          className="w-full rounded-2xl px-6 py-4 text-lg sm:col-span-2 xl:col-span-1"
                           onClick={() => void persistStudentRecord()}
                           disabled={feedbackSaving}
                         >
@@ -522,60 +537,54 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                       ) : (
                         <Button
                           size="lg"
-                          className="rounded-2xl px-10 py-6 text-lg"
+                          className="w-full rounded-2xl px-6 py-4 text-lg sm:col-span-2 xl:col-span-1"
                           onClick={() => setShowFeedbackDialog(true)}
                         >
                           <Save className="mr-2 h-5 w-5" /> Add Feedback & Continue
                         </Button>
                       )}
-                      <div className="ml-auto">
-                        <Button
-                          size="lg"
-                          variant="outline"
-                          className="rounded-2xl px-8 py-6 text-lg"
-                          onClick={() => resetStudent()}
-                          disabled={feedbackSaving}
-                        >
-                          <RotateCcw className="mr-2 h-5 w-5" /> Discard
-                        </Button>
-                      </div>
+                      <Button
+                        size="lg"
+                        variant="outline"
+                        className="w-full rounded-2xl px-6 py-4 text-lg"
+                        onClick={() => resetStudent()}
+                        disabled={feedbackSaving}
+                      >
+                        <RotateCcw className="mr-2 h-5 w-5" /> Discard
+                      </Button>
                     </>
                   ) : (
                     <>
-                      <div className="flex gap-4">
-                        {phase === "presenting" ? (
-                          <Button
-                            size="lg"
-                            variant="secondary"
-                            className="rounded-2xl px-8 py-6 text-lg"
-                            onClick={pause}
-                          >
-                            <Pause className="mr-2 h-5 w-5" /> Pause
-                          </Button>
-                        ) : (
-                          <Button size="lg" className="rounded-2xl px-8 py-6 text-lg" onClick={resume}>
-                            <Play className="mr-2 h-5 w-5" /> Resume
-                          </Button>
-                        )}
+                      {phase === "presenting" ? (
                         <Button
                           size="lg"
-                          variant="outline"
-                          className="rounded-2xl border-red-200 px-8 py-6 text-lg text-red-600 hover:bg-red-50 hover:text-red-700"
-                          onClick={finish}
+                          variant="secondary"
+                          className="w-full rounded-2xl px-6 py-4 text-lg"
+                          onClick={pause}
                         >
-                          <Square className="mr-2 h-5 w-5" /> Finish
+                          <Pause className="mr-2 h-5 w-5" /> Pause
                         </Button>
-                      </div>
-                      <div className="ml-auto">
-                        <Button
-                          size="lg"
-                          variant="outline"
-                          className="rounded-2xl px-8 py-6 text-lg"
-                          onClick={() => resetStudent()}
-                        >
-                          <RotateCcw className="mr-2 h-5 w-5" /> Reset
+                      ) : (
+                        <Button size="lg" className="w-full rounded-2xl px-6 py-4 text-lg" onClick={resume}>
+                          <Play className="mr-2 h-5 w-5" /> Resume
                         </Button>
-                      </div>
+                      )}
+                      <Button
+                        size="lg"
+                        variant="outline"
+                        className="w-full rounded-2xl border-red-200 px-6 py-4 text-lg text-red-600 hover:bg-red-50 hover:text-red-700"
+                        onClick={finish}
+                      >
+                        <Square className="mr-2 h-5 w-5" /> Finish
+                      </Button>
+                      <Button
+                        size="lg"
+                        variant="outline"
+                        className="w-full rounded-2xl px-6 py-4 text-lg"
+                        onClick={() => resetStudent()}
+                      >
+                        <RotateCcw className="mr-2 h-5 w-5" /> Reset
+                      </Button>
                     </>
                   )}
                 </div>
@@ -628,17 +637,17 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3 text-sm">
-                    <div className="flex justify-between leading-relaxed">
+                    <div className="flex flex-wrap items-start justify-between gap-2 leading-relaxed">
                       <span className="text-slate-500">Entered</span>
                       <span className="tabular-nums font-medium text-slate-700">{fmtClock(setupStartTime)}</span>
                     </div>
-                    <div className="flex justify-between leading-relaxed">
+                    <div className="flex flex-wrap items-start justify-between gap-2 leading-relaxed">
                       <span className="text-slate-500">Presented</span>
                       <span className="tabular-nums font-medium text-slate-700">
                         {fmtClock(presentationStartTime)}
                       </span>
                     </div>
-                    <div className="flex justify-between leading-relaxed">
+                    <div className="flex flex-wrap items-start justify-between gap-2 leading-relaxed">
                       <span className="text-slate-500">{endTime ? "Ended" : "Now"}</span>
                       <span className="tabular-nums font-medium text-slate-700">
                         {fmtClock(endTime || currentTime)}
@@ -647,24 +656,24 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
 
                     <div className="my-1 border-t border-slate-200" />
 
-                    <div className="flex justify-between leading-relaxed">
+                    <div className="flex flex-wrap items-start justify-between gap-2 leading-relaxed">
                       <span className="text-slate-500">Setup Time</span>
                       <span className="font-semibold tabular-nums text-amber-700">{fmt(setupSeconds)}</span>
                     </div>
-                    <div className="flex justify-between leading-relaxed">
+                    <div className="flex flex-wrap items-start justify-between gap-2 leading-relaxed">
                       <span className="text-slate-500">Presentation</span>
                       <span className="font-semibold tabular-nums text-slate-700">
                         {fmt(Math.min(elapsed, TOTAL))}
                       </span>
                     </div>
                     {isOvertime && (
-                      <div className="flex justify-between leading-relaxed text-red-600">
+                      <div className="flex flex-wrap items-start justify-between gap-2 leading-relaxed text-red-600">
                         <span>Overtime</span>
                         <span className="font-semibold tabular-nums">+{fmt(overtime)}</span>
                       </div>
                     )}
                     {phase === "finished" && remaining > 0 && (
-                      <div className="flex justify-between leading-relaxed text-emerald-600">
+                      <div className="flex flex-wrap items-start justify-between gap-2 leading-relaxed text-emerald-600">
                         <span>Time Saved</span>
                         <span className="font-semibold tabular-nums">{fmt(remaining)}</span>
                       </div>
@@ -672,7 +681,7 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
 
                     <div className="my-1 border-t border-slate-200" />
 
-                    <div className="flex justify-between text-base font-bold leading-relaxed">
+                    <div className="flex flex-wrap items-start justify-between gap-2 text-base font-bold leading-relaxed">
                       <span className="text-slate-800">Total Time</span>
                       <span className="tabular-nums text-slate-900">{fmt(setupSeconds + elapsed)}</span>
                     </div>
@@ -702,7 +711,7 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                     return (
                       <div
                         key={`${segment.name}-${index}`}
-                        className={`flex items-center justify-between rounded-2xl px-5 py-3.5 ring-1 transition-all ${
+                        className={`flex flex-col gap-3 rounded-2xl px-5 py-3.5 ring-1 transition-all sm:flex-row sm:items-center sm:justify-between ${
                           active
                             ? "bg-slate-900 text-white ring-slate-900"
                             : done
@@ -710,7 +719,7 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                             : "bg-white text-slate-700 ring-slate-200"
                         }`}
                       >
-                        <div>
+                        <div className="min-w-0">
                           <div className="text-sm font-semibold leading-snug">{segment.name}</div>
                           <div
                             className={`mt-0.5 text-xs leading-normal ${
@@ -766,7 +775,7 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
 
       {showNameModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-xl">
+          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-xl sm:p-8">
             <h2 className="text-2xl font-bold text-slate-900">Student Name</h2>
             <p className="mt-1 text-sm text-slate-500">Enter the student&apos;s name to begin setup.</p>
             <form
@@ -783,8 +792,13 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                 placeholder="e.g. Aavriti Sharma"
                 className="mt-5 w-full rounded-2xl border border-slate-300 px-4 py-3 text-lg text-slate-900 outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
               />
-              <div className="mt-6 flex gap-3">
-                <Button type="submit" size="lg" className="flex-1 rounded-2xl" disabled={!nameInput.trim()}>
+              <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row">
+                <Button
+                  type="submit"
+                  size="lg"
+                  className="w-full rounded-2xl sm:flex-1"
+                  disabled={!nameInput.trim()}
+                >
                   <Settings className="mr-2 h-4 w-4" />
                   Start Setup
                 </Button>
@@ -792,7 +806,7 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                   type="button"
                   size="lg"
                   variant="outline"
-                  className="rounded-2xl"
+                  className="w-full rounded-2xl sm:w-auto"
                   onClick={() => setShowNameModal(false)}
                 >
                   Cancel

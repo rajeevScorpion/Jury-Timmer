@@ -56,17 +56,22 @@ export default function FeedbackDialog({
             </div>
           )}
 
-          <div className="flex justify-end gap-3 pt-2">
+          <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
             <Button
               type="button"
               variant="outline"
-              className="rounded-xl"
+              className="w-full rounded-xl sm:w-auto"
               onClick={() => onOpenChange(false)}
               disabled={saving}
             >
               <X className="mr-1.5 h-4 w-4" /> Cancel
             </Button>
-            <Button type="button" className="rounded-xl" onClick={() => void onSubmit()} disabled={saving}>
+            <Button
+              type="button"
+              className="w-full rounded-xl sm:w-auto"
+              onClick={() => void onSubmit()}
+              disabled={saving}
+            >
               <Save className="mr-1.5 h-4 w-4" />
               {saving ? "Saving..." : "Save & Continue"}
             </Button>

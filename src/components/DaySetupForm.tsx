@@ -282,51 +282,61 @@ export default function DaySetupForm() {
         </Card>
 
         <Card className="rounded-3xl border-0 shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between">
+          <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <CardTitle className="text-xl">Subjects</CardTitle>
-            <Button type="button" variant="outline" size="sm" onClick={addSubject} className="rounded-full">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={addSubject}
+              className="w-full rounded-full sm:w-auto"
+            >
               <Plus className="mr-1 h-4 w-4" /> Add subject
             </Button>
           </CardHeader>
           <CardContent className="space-y-3">
             {subjects.map((subject, index) => (
-              <div key={index} className="flex items-center gap-2">
-                <div className="w-8 text-center text-xs font-medium text-slate-400">{index + 1}</div>
-                <Input
-                  value={subject}
-                  onChange={(e) => updateSubject(index, e.target.value)}
-                  placeholder={`Subject ${index + 1}`}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="rounded-full px-2"
-                  onClick={() => moveSubject(index, -1)}
-                  disabled={index === 0}
-                >
-                  <ArrowUp className="h-4 w-4" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="rounded-full px-2"
-                  onClick={() => moveSubject(index, 1)}
-                  disabled={index === subjects.length - 1}
-                >
-                  <ArrowDown className="h-4 w-4" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="rounded-full px-2 text-red-600 hover:bg-red-50 hover:text-red-700"
-                  onClick={() => removeSubject(index)}
-                  disabled={subjects.length <= 1}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+              <div key={index} className="rounded-2xl bg-slate-50 p-3 ring-1 ring-slate-200 sm:bg-transparent sm:p-0 sm:ring-0">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <div className="w-8 text-center text-xs font-medium text-slate-400">{index + 1}</div>
+                  <Input
+                    value={subject}
+                    onChange={(e) => updateSubject(index, e.target.value)}
+                    placeholder={`Subject ${index + 1}`}
+                  />
+                  <div className="flex flex-wrap gap-2 sm:flex-nowrap">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="rounded-full px-2"
+                      onClick={() => moveSubject(index, -1)}
+                      disabled={index === 0}
+                    >
+                      <ArrowUp className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="rounded-full px-2"
+                      onClick={() => moveSubject(index, 1)}
+                      disabled={index === subjects.length - 1}
+                    >
+                      <ArrowDown className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="rounded-full px-2 text-red-600 hover:bg-red-50 hover:text-red-700"
+                      onClick={() => removeSubject(index)}
+                      disabled={subjects.length <= 1}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
               </div>
             ))}
             <p className="text-xs text-slate-400">
@@ -337,7 +347,7 @@ export default function DaySetupForm() {
 
         {preview && (
           <Card className="rounded-3xl border-0 bg-slate-50 shadow-none ring-1 ring-slate-200">
-            <CardContent className="grid gap-3 py-5 text-sm md:grid-cols-5">
+            <CardContent className="grid gap-3 py-5 text-sm sm:grid-cols-2 xl:grid-cols-5">
               <Stat label="Per student" value={fmt(preview.totalSeconds)} />
               <Stat label="Per subject" value={fmt(preview.perSubjectSeconds)} />
               <Stat label="Final feedback" value={fmt(preview.feedbackSeconds)} />
@@ -357,7 +367,7 @@ export default function DaySetupForm() {
         )}
 
         <div className="flex justify-end">
-          <Button type="submit" size="lg" className="rounded-2xl px-10" disabled={submitting}>
+          <Button type="submit" size="lg" className="w-full rounded-2xl px-10 sm:w-auto" disabled={submitting}>
             <Play className="mr-2 h-5 w-5" />
             {submitting ? "Creating..." : "Start Jury Day"}
           </Button>

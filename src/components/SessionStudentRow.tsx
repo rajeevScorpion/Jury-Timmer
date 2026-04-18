@@ -27,31 +27,43 @@ export default function SessionStudentRow({ session, record }: SessionStudentRow
 
   return (
     <div className="rounded-2xl bg-white ring-1 ring-slate-200">
-      <div className="flex w-full items-center justify-between gap-3 px-4 py-3">
+      <div className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-start sm:justify-between">
         <button
           type="button"
           onClick={() => setOpen((value) => !value)}
-          className="flex flex-1 flex-wrap items-center gap-3 text-left"
+          className="flex min-w-0 flex-1 flex-col gap-3 text-left"
         >
-          <span className="w-8 text-xs font-medium text-slate-400">#{record.student_order}</span>
-          <span className="font-semibold text-slate-900">{record.student_name}</span>
-          <span className="text-xs tabular-nums text-slate-500">
-            Total {fmt(record.total_time_used_seconds)} / Setup {fmt(record.setup_seconds)} / Pres{" "}
-            {fmt(record.presentation_seconds)}
-          </span>
-          {record.overtime_seconds > 0 && (
-            <Badge variant="outline" className="rounded-full border-red-200 text-red-700">
-              +{fmt(record.overtime_seconds)} over
-            </Badge>
-          )}
-          {record.time_saved_seconds > 0 && (
-            <Badge variant="outline" className="rounded-full border-emerald-200 text-emerald-700">
-              {fmt(record.time_saved_seconds)} saved
-            </Badge>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-500">
+              #{record.student_order}
+            </span>
+            <span className="break-words text-base font-semibold text-slate-900">{record.student_name}</span>
+          </div>
+
+          <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+            <span className="rounded-full bg-slate-50 px-3 py-1 ring-1 ring-slate-200">
+              Total {fmt(record.total_time_used_seconds)}
+            </span>
+            <span className="rounded-full bg-slate-50 px-3 py-1 ring-1 ring-slate-200">
+              Setup {fmt(record.setup_seconds)}
+            </span>
+            <span className="rounded-full bg-slate-50 px-3 py-1 ring-1 ring-slate-200">
+              Presentation {fmt(record.presentation_seconds)}
+            </span>
+            {record.overtime_seconds > 0 && (
+              <Badge variant="outline" className="rounded-full border-red-200 text-red-700">
+                +{fmt(record.overtime_seconds)} over
+              </Badge>
+            )}
+            {record.time_saved_seconds > 0 && (
+              <Badge variant="outline" className="rounded-full border-emerald-200 text-emerald-700">
+                {fmt(record.time_saved_seconds)} saved
+              </Badge>
+            )}
+          </div>
         </button>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 self-end sm:self-auto">
           <Button
             type="button"
             variant="outline"
@@ -60,7 +72,7 @@ export default function SessionStudentRow({ session, record }: SessionStudentRow
             onClick={handlePdf}
             disabled={exporting}
           >
-            <FileDown className="mr-1.5 h-4 w-4" />
+            <FileDown className="h-4 w-4" />
             {exporting ? "Generating..." : "PDF"}
           </Button>
           <button
@@ -101,7 +113,7 @@ export default function SessionStudentRow({ session, record }: SessionStudentRow
             </div>
           )}
 
-          <div className="flex flex-wrap gap-4 text-xs text-slate-500">
+          <div className="flex flex-wrap gap-3 text-xs text-slate-500">
             <span>Setup started {formatEventTime(record.setup_started_at)}</span>
             <span>Presented {formatEventTime(record.presentation_started_at)}</span>
             <span>Ended {formatEventTime(record.ended_at)}</span>

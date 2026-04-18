@@ -77,11 +77,15 @@ export default function CompletedSessionDetailView() {
           <h1 className="text-xl font-semibold text-slate-900">Could not load this jury day</h1>
           <p className="mt-2 text-sm text-slate-500">{error}</p>
           <div className="mt-6 flex flex-wrap gap-3">
-            <Button variant="outline" className="rounded-full" onClick={() => navigate("/history")}>
+            <Button
+              variant="outline"
+              className="w-full rounded-full sm:w-auto"
+              onClick={() => navigate("/history")}
+            >
               <ArrowLeft className="mr-1.5 h-4 w-4" />
               Back to History
             </Button>
-            <Button className="rounded-full" onClick={() => void load()}>
+            <Button className="w-full rounded-full sm:w-auto" onClick={() => void load()}>
               Try Again
             </Button>
           </div>
@@ -97,13 +101,17 @@ export default function CompletedSessionDetailView() {
   return (
     <div className="mx-auto max-w-6xl space-y-5 px-4 py-8 md:px-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Button variant="outline" className="rounded-full" onClick={() => navigate("/history")}>
+        <Button
+          variant="outline"
+          className="w-full rounded-full sm:w-auto"
+          onClick={() => navigate("/history")}
+        >
           <ArrowLeft className="mr-1.5 h-4 w-4" />
           Back to History
         </Button>
         <Button
           variant="outline"
-          className="rounded-full"
+          className="w-full rounded-full sm:w-auto"
           onClick={() => downloadCsv(csvFilenameFor(session), buildDayCsv(session, records))}
         >
           <Download className="mr-1.5 h-4 w-4" />
@@ -112,7 +120,7 @@ export default function CompletedSessionDetailView() {
       </div>
 
       <Card className="rounded-3xl border-0 shadow-sm">
-        <CardContent className="space-y-6 p-6 md:p-8">
+        <CardContent className="space-y-6 p-5 sm:p-6 md:p-8">
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-2xl font-bold tracking-tight text-slate-900">{session.department}</h1>
@@ -129,13 +137,13 @@ export default function CompletedSessionDetailView() {
             <p className="text-sm text-slate-500">
               Review the saved student feedback for this completed jury day.
             </p>
-            <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500">
+            <div className="flex flex-wrap gap-3 text-sm text-slate-500">
               <span>Created {historyTimestampLabel(session.created_at)}</span>
               <span>Completed {historyTimestampLabel(session.completed_at)}</span>
             </div>
           </div>
 
-          <div className="grid gap-3 md:grid-cols-5">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             <DetailStat label="Students planned" value={String(session.number_of_students)} />
             <DetailStat label="Reports saved" value={String(records.length)} />
             <DetailStat label="Per student" value={fmt(session.total_time_seconds)} />
@@ -171,7 +179,7 @@ export default function CompletedSessionDetailView() {
                 Expand a student to read final feedback and per-subject notes.
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Badge variant="secondary" className="rounded-full">
                 <Users className="mr-1.5 h-3.5 w-3.5" />
                 {records.length} saved
