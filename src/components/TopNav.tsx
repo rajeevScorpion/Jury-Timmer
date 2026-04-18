@@ -1,9 +1,9 @@
 import { NavLink } from "react-router-dom";
-import { Clock3, LogOut } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { isSuperAdminEnabled } from "@/lib/appSettings";
-import { appName } from "@/lib/brand";
 import { cn } from "@/lib/utils";
+import BrandMark from "@/components/BrandMark";
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
   cn(
@@ -18,12 +18,7 @@ export default function TopNav() {
   return (
     <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-2.5 md:px-8">
-        <div className="flex items-center gap-2 text-slate-500">
-          <Clock3 className="h-4 w-4" />
-          <span className="text-xs font-semibold uppercase tracking-widest text-slate-700">
-            {appName}
-          </span>
-        </div>
+        <BrandMark className="shrink-0" />
         <nav className="flex items-center gap-1">
           <NavLink to="/jury" className={linkClass}>
             Live
