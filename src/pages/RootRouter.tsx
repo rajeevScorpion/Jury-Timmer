@@ -5,6 +5,7 @@ import LoginGate from "@/components/LoginGate";
 import TopNav from "@/components/TopNav";
 import DaySetupForm from "@/components/DaySetupForm";
 import ReportHistoryView from "@/components/ReportHistoryView";
+import CompletedSessionDetailView from "@/components/CompletedSessionDetailView";
 import DocsView from "@/components/DocsView";
 import AdminView from "@/components/AdminView";
 import JuryTimerApp from "@/JuryTimerApp";
@@ -75,6 +76,14 @@ function SignedInRoutes() {
           element={
             <AppShell>
               <ReportHistoryView />
+            </AppShell>
+          }
+        />
+        <Route
+          path="/history/:sessionId"
+          element={
+            <AppShell>
+              <CompletedSessionDetailView />
             </AppShell>
           }
         />

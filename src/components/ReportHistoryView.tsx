@@ -1,63 +1,113 @@
-import { useCallback, useEffect, useState } from "react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { CheckCircle2, ChevronDown, ChevronRight, ChevronUp, Download, Users } from "lucide-react";
+import SessionStudentRow from "@/components/SessionStudentRow";
 import { Badge } from "@/components/ui/badge";
-import { ChevronDown, ChevronUp, Download, FileDown, FileText, Users } from "lucide-react";
-import { supabase } from "@/lib/supabase";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { useAuth } from "@/context/AuthContext";
-import type { JurySession, StudentRecord } from "@/types/session";
-import { fmt } from "@/lib/timeFormat";
+import { useSession } from "@/context/SessionContext";
 import { buildDayCsv, csvFilenameFor, downloadCsv } from "@/lib/csv";
-import { exportStudentPdf } from "@/lib/pdf";
+import { fmt } from "@/lib/timeFormat";
+import {
+  fetchHistorySessions,
+  fetchSessionRecords,
+  historyTimestampLabel,
+  markSessionCompleted,
+  sessionStatusLabel,
+} from "@/lib/sessionHistory";
+import type { JurySession, StudentRecord } from "@/types/session";
 
 export default function ReportHistoryView() {
+  const navigate = useNavigate();
   const { user } = useAuth();
+  const { activeSession, reload } = useSession();
   const [sessions, setSessions] = useState<JurySession[]>([]);
   const [recordsBySession, setRecordsBySession] = useState<Record<string, StudentRecord[]>>({});
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [closingSessionId, setClosingSessionId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!user) return;
     setLoading(true);
-    const { data, error } = await supabase
-      .from("jury_sessions")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (!error && data) setSessions(data as JurySession[]);
-    setLoading(false);
+
+    try {
+      setActionError(null);
+      setSessions(await fetchHistorySessions());
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Failed to load history.");
+    } finally {
+      setLoading(false);
+    }
   }, [user]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const toggle = async (id: string) => {
-    const nextOpen = !expanded[id];
-    setExpanded((prev) => ({ ...prev, [id]: nextOpen }));
-    if (nextOpen && !recordsBySession[id]) {
-      const { data } = await supabase
-        .from("student_records")
-        .select("*")
-        .eq("session_id", id)
-        .order("student_order", { ascending: true });
-      setRecordsBySession((prev) => ({ ...prev, [id]: (data as StudentRecord[]) ?? [] }));
+  const getSessionRecords = useCallback(
+    async (sessionId: string) => {
+      const cached = recordsBySession[sessionId];
+      if (cached) return cached;
+
+      const records = await fetchSessionRecords(sessionId);
+      setRecordsBySession((prev) => (prev[sessionId] ? prev : { ...prev, [sessionId]: records }));
+      return records;
+    },
+    [recordsBySession],
+  );
+
+  const toggle = async (sessionId: string) => {
+    const nextOpen = !expanded[sessionId];
+    setExpanded((prev) => ({ ...prev, [sessionId]: nextOpen }));
+    if (!nextOpen) return;
+
+    try {
+      setActionError(null);
+      await getSessionRecords(sessionId);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Failed to load student records.");
     }
   };
 
-  const downloadSessionCsv = async (session: JurySession) => {
-    let records = recordsBySession[session.id];
-    if (!records) {
-      const { data } = await supabase
-        .from("student_records")
-        .select("*")
-        .eq("session_id", session.id)
-        .order("student_order", { ascending: true });
-      records = (data as StudentRecord[]) ?? [];
-      setRecordsBySession((prev) => ({ ...prev, [session.id]: records }));
-    }
+  const downloadSessionCsvFor = async (session: JurySession) => {
+    const records = await getSessionRecords(session.id);
     downloadCsv(csvFilenameFor(session), buildDayCsv(session, records));
   };
+
+  const completeHistorySession = async (session: JurySession) => {
+    if (session.status !== "active" || closingSessionId) return;
+
+    const confirmed = window.confirm(
+      "Complete this jury day now? It will close the live session and keep the saved records in History.",
+    );
+    if (!confirmed) return;
+
+    try {
+      setClosingSessionId(session.id);
+      setActionError(null);
+
+      const completedAt = await markSessionCompleted(session.id);
+      setSessions((prev) =>
+        prev.map((entry) =>
+          entry.id === session.id ? { ...entry, status: "completed", completed_at: completedAt } : entry,
+        ),
+      );
+
+      if (activeSession?.id === session.id) {
+        await reload();
+      }
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Failed to complete jury day.");
+    } finally {
+      setClosingSessionId(null);
+    }
+  };
+
+  const inProgressSessions = sessions.filter((session) => session.status === "active");
+  const completedSessions = sessions.filter((session) => session.status === "completed");
 
   if (loading) {
     return (
@@ -81,51 +131,53 @@ export default function ReportHistoryView() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4 px-4 py-8 md:px-8">
-      <h1 className="text-2xl font-bold tracking-tight text-slate-900">History</h1>
-      <p className="text-sm text-slate-500">
-        All jury days you have run. Expand to inspect individual students, export a day CSV, or download a student PDF.
-      </p>
+    <div className="mx-auto max-w-5xl space-y-6 px-4 py-8 md:px-8">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight text-slate-900">History</h1>
+        <p className="mt-1 text-sm text-slate-500">
+          Open jury days stay manageable inline. Completed days open in a dedicated review page for full feedback.
+        </p>
+      </div>
 
-      <div className="space-y-3">
-        {sessions.map((session) => {
+      {actionError && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-3 text-sm text-red-700">
+          {actionError}
+        </div>
+      )}
+
+      <HistorySection
+        title="In Progress"
+        description="Open jury days that can still be reviewed, exported, or formally completed."
+        count={inProgressSessions.length}
+        emptyMessage="No jury days are currently in progress."
+      >
+        {inProgressSessions.map((session) => {
           const isExpanded = !!expanded[session.id];
           const records = recordsBySession[session.id] ?? [];
+          const isClosing = closingSessionId === session.id;
 
           return (
             <Card key={session.id} className="rounded-3xl border-0 shadow-sm">
               <CardContent className="p-5">
-                <div className="flex flex-wrap items-center justify-between gap-4">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-lg font-semibold text-slate-900">{session.department}</span>
-                      <Badge variant="outline" className="rounded-full">
-                        {session.jury_type}
-                      </Badge>
-                      <Badge variant="outline" className="rounded-full">
-                        {session.section} · Sem {session.semester} · {session.academic_year}
-                      </Badge>
-                      <Badge
-                        variant={session.status === "completed" ? "secondary" : "default"}
-                        className="rounded-full"
-                      >
-                        {session.status}
-                      </Badge>
-                    </div>
-                    <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-slate-500">
-                      <span>Created {new Date(session.created_at).toLocaleString()}</span>
-                      <span>· {session.number_of_students} students</span>
-                      <span>· {fmt(session.total_time_seconds)} total</span>
-                      <span>· {session.subjects.length} subjects + feedback</span>
-                    </div>
-                  </div>
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <SessionSummary session={session} />
 
                   <div className="flex items-center gap-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="rounded-full"
+                      onClick={() => void completeHistorySession(session)}
+                      disabled={isClosing}
+                    >
+                      <CheckCircle2 className="mr-1.5 h-4 w-4" />
+                      {isClosing ? "Completing..." : "Complete Jury"}
+                    </Button>
                     <Button
                       variant="outline"
                       size="sm"
                       className="rounded-full"
-                      onClick={() => downloadSessionCsv(session)}
+                      onClick={() => void downloadSessionCsvFor(session)}
                     >
                       <Download className="mr-1.5 h-4 w-4" />
                       CSV
@@ -134,7 +186,7 @@ export default function ReportHistoryView() {
                       variant="outline"
                       size="sm"
                       className="rounded-full"
-                      onClick={() => toggle(session.id)}
+                      onClick={() => void toggle(session.id)}
                     >
                       <Users className="mr-1.5 h-4 w-4" />
                       Students
@@ -155,7 +207,7 @@ export default function ReportHistoryView() {
                       </div>
                     ) : (
                       records.map((record) => (
-                        <StudentRow key={record.id} session={session} record={record} />
+                        <SessionStudentRow key={record.id} session={session} record={record} />
                       ))
                     )}
                   </div>
@@ -164,112 +216,128 @@ export default function ReportHistoryView() {
             </Card>
           );
         })}
-      </div>
+      </HistorySection>
+
+      <HistorySection
+        title="Completed"
+        description="Closed jury days. Open a session to review all saved student feedback on its own page."
+        count={completedSessions.length}
+        emptyMessage="No completed jury days yet."
+      >
+        {completedSessions.map((session) => (
+          <Card
+            key={session.id}
+            role="button"
+            tabIndex={0}
+            className="rounded-3xl border-0 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-slate-300"
+            onClick={() => navigate(`/history/${session.id}`)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                navigate(`/history/${session.id}`);
+              }
+            }}
+          >
+            <CardContent className="p-5">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  <SessionSummary session={session} />
+                  <div className="mt-3 text-sm text-slate-500">
+                    Open this completed jury day to review all student feedback in one place.
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-full"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void downloadSessionCsvFor(session);
+                    }}
+                  >
+                    <Download className="mr-1.5 h-4 w-4" />
+                    CSV
+                  </Button>
+                  <div className="flex items-center gap-1 text-sm font-medium text-slate-500">
+                    Open
+                    <ChevronRight className="h-4 w-4" />
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </HistorySection>
     </div>
   );
 }
 
-function StudentRow({ session, record }: { session: JurySession; record: StudentRecord }) {
-  const [open, setOpen] = useState(false);
-  const [exporting, setExporting] = useState(false);
-
-  const handlePdf = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    try {
-      setExporting(true);
-      await exportStudentPdf(session, record);
-    } finally {
-      setExporting(false);
-    }
-  };
+function HistorySection({
+  title,
+  description,
+  count,
+  emptyMessage,
+  children,
+}: {
+  title: string;
+  description: string;
+  count: number;
+  emptyMessage: string;
+  children: ReactNode;
+}) {
+  const hasItems = count > 0;
 
   return (
-    <div className="rounded-2xl bg-white ring-1 ring-slate-200">
-      <div className="flex w-full items-center justify-between gap-3 px-4 py-3">
-        <button
-          type="button"
-          onClick={() => setOpen((value) => !value)}
-          className="flex flex-1 flex-wrap items-center gap-3 text-left"
-        >
-          <span className="w-8 text-xs font-medium text-slate-400">#{record.student_order}</span>
-          <span className="font-semibold text-slate-900">{record.student_name}</span>
-          <span className="text-xs tabular-nums text-slate-500">
-            Total {fmt(record.total_time_used_seconds)} · Setup {fmt(record.setup_seconds)} · Pres{" "}
-            {fmt(record.presentation_seconds)}
-          </span>
-          {record.overtime_seconds > 0 && (
-            <Badge variant="outline" className="rounded-full border-red-200 text-red-700">
-              +{fmt(record.overtime_seconds)} over
+    <section className="space-y-3">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
+            <Badge variant="secondary" className="rounded-full">
+              {count}
             </Badge>
-          )}
-          {record.time_saved_seconds > 0 && (
-            <Badge variant="outline" className="rounded-full border-emerald-200 text-emerald-700">
-              {fmt(record.time_saved_seconds)} saved
-            </Badge>
-          )}
-        </button>
-
-        <div className="flex items-center gap-1.5">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="rounded-full"
-            onClick={handlePdf}
-            disabled={exporting}
-          >
-            <FileDown className="mr-1.5 h-4 w-4" />
-            {exporting ? "Generating..." : "PDF"}
-          </Button>
-          <button
-            type="button"
-            onClick={() => setOpen((value) => !value)}
-            className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-          >
-            {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-          </button>
+          </div>
+          <p className="mt-1 text-sm text-slate-500">{description}</p>
         </div>
       </div>
 
-      {open && (
-        <div className="space-y-3 border-t border-slate-100 px-4 py-4 text-sm">
-          <div>
-            <div className="mb-1 flex items-center gap-1.5 text-xs font-medium uppercase tracking-widest text-slate-500">
-              <FileText className="h-3 w-3" /> Final feedback
-            </div>
-            <div className="whitespace-pre-wrap text-slate-700">
-              {record.feedback?.final || <span className="text-slate-400">-</span>}
-            </div>
-          </div>
-
-          {record.feedback?.perSubject && Object.keys(record.feedback.perSubject).length > 0 && (
-            <div>
-              <div className="mb-1 text-xs font-medium uppercase tracking-widest text-slate-500">
-                Per-subject notes
-              </div>
-              <div className="space-y-1.5">
-                {Object.entries(record.feedback.perSubject).map(([subject, note]) => (
-                  <div key={subject} className="rounded-xl bg-slate-50 p-3">
-                    <div className="text-xs font-semibold text-slate-600">{subject}</div>
-                    <div className="mt-0.5 whitespace-pre-wrap text-slate-700">{note}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="flex flex-wrap gap-4 text-xs text-slate-500">
-            <span>Setup started {formatTs(record.setup_started_at)}</span>
-            <span>Presented {formatTs(record.presentation_started_at)}</span>
-            <span>Ended {formatTs(record.ended_at)}</span>
-          </div>
+      {hasItems ? (
+        <div className="space-y-3">{children}</div>
+      ) : (
+        <div className="rounded-3xl bg-white p-6 text-sm text-slate-500 shadow-sm ring-1 ring-slate-200">
+          {emptyMessage}
         </div>
       )}
-    </div>
+    </section>
   );
 }
 
-function formatTs(iso: string | null): string {
-  if (!iso) return "-";
-  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+function SessionSummary({ session }: { session: JurySession }) {
+  const statusVariant = session.status === "completed" ? "secondary" : "default";
+
+  return (
+    <div className="min-w-0 flex-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-lg font-semibold text-slate-900">{session.department}</span>
+        <Badge variant="outline" className="rounded-full">
+          {session.jury_type}
+        </Badge>
+        <Badge variant="outline" className="rounded-full">
+          {session.section} / Sem {session.semester} / {session.academic_year}
+        </Badge>
+        <Badge variant={statusVariant} className="rounded-full">
+          {sessionStatusLabel(session.status)}
+        </Badge>
+      </div>
+      <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-slate-500">
+        <span>Created {historyTimestampLabel(session.created_at)}</span>
+        {session.completed_at && <span>Completed {historyTimestampLabel(session.completed_at)}</span>}
+        <span>{session.number_of_students} students planned</span>
+        <span>{fmt(session.total_time_seconds)} per student</span>
+        <span>{session.subjects.length} subjects + feedback</span>
+      </div>
+    </div>
+  );
 }
