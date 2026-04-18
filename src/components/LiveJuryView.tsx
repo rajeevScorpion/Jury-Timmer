@@ -4,19 +4,26 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Play,
   Pause,
   RotateCcw,
   Volume2,
-  Clock3,
   AlertTriangle,
-  User,
   Settings,
   ChevronRight,
   Square,
   BookOpen,
   Save,
+  Info,
 } from "lucide-react";
 import { fmt, fmtClock } from "@/lib/timeFormat";
 import { beep, ensureAudio } from "@/lib/audio";
@@ -48,6 +55,8 @@ import {
 type Phase = "idle" | "setup" | "presenting" | "paused" | "finished";
 
 const FEEDBACK_DRAFT_KEY = "juryTimer.feedbackDraft";
+const TIMER_HELP_COPY =
+  "One tap starts the full cycle. The app beeps once after each subject segment and gives a triple beep when time is up. Overtime keeps counting so students can see exactly how much extra time was used.";
 
 function feedbackDraftStorageKey(sessionId: string, studentOrder: number): string {
   return `${FEEDBACK_DRAFT_KEY}:${sessionId}:${studentOrder}`;
@@ -94,6 +103,8 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
   const [nameInput, setNameInput] = useState("");
   const [showNameModal, setShowNameModal] = useState(false);
   const [showFeedbackDialog, setShowFeedbackDialog] = useState(false);
+  const [showTimerHelp, setShowTimerHelp] = useState(false);
+  const [showFeedbackInfo, setShowFeedbackInfo] = useState(false);
 
   const [setupSeconds, setSetupSeconds] = useState(0);
   const [elapsed, setElapsed] = useState(0);
@@ -112,6 +123,7 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
   const lastCue = useRef(-1);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const pageRef = useRef<HTMLDivElement | null>(null);
+  const isActive = phase === "presenting" || phase === "paused" || phase === "finished";
 
   const isOvertime = elapsed > TOTAL;
   const overtime = Math.max(elapsed - TOTAL, 0);
@@ -189,6 +201,18 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
     }
   }, [draftStorageId, feedbackDraft]);
 
+  useEffect(() => {
+    if (!isActive && showTimerHelp) {
+      setShowTimerHelp(false);
+    }
+  }, [isActive, showTimerHelp]);
+
+  useEffect(() => {
+    if ((!isActive || !isSynchronousFeedback) && showFeedbackInfo) {
+      setShowFeedbackInfo(false);
+    }
+  }, [isActive, isSynchronousFeedback, showFeedbackInfo]);
+
   const updateFeedbackDraft = (nextFeedback: Feedback) => {
     setFeedbackDraft(nextFeedback);
     if (feedbackError) setFeedbackError(null);
@@ -208,6 +232,8 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
     setPhase("idle");
     setStudentName("");
     setNameInput("");
+    setShowFeedbackInfo(false);
+    setShowTimerHelp(false);
     setSetupSeconds(0);
     setElapsed(0);
     setSetupStartTime(null);
@@ -221,7 +247,6 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
   const openNameModal = () => {
     setNameInput("");
     setShowNameModal(true);
-    setTimeout(() => inputRef.current?.focus(), 50);
   };
 
   const submitName = async () => {
@@ -293,8 +318,6 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
     }
   };
 
-  const isActive = phase === "presenting" || phase === "paused" || phase === "finished";
-
   const perStudentLabel = `${fmt(TOTAL)} per student`;
 
   return (
@@ -303,12 +326,19 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
         <div className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-slate-200 sm:p-6 md:px-8 md:py-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0 max-w-3xl">
-              <div className="mb-1 flex items-center gap-2 text-slate-500">
-                <Clock3 className="h-4 w-4" />
-                <span className="text-xs font-medium uppercase tracking-widest">Jury Day</span>
+              <div className="mb-3 flex items-center justify-end gap-1.5">
+                <div className="tabular-nums text-sm font-medium text-slate-400">{fmtClock(currentTime)}</div>
+                <button
+                  onClick={() => setSoundEnabled((value) => !value)}
+                  className={`rounded-full p-2.5 transition ${
+                    soundEnabled ? "text-slate-500 hover:bg-slate-100" : "bg-slate-200 text-slate-400"
+                  }`}
+                >
+                  <Volume2 className="h-4 w-4" />
+                </button>
               </div>
               <h1 className="text-2xl font-bold leading-tight tracking-tight text-slate-900 md:text-4xl">
-                {appName}
+                {studentName || appName}
               </h1>
               <p className="mt-2 text-base font-semibold text-slate-800">{activeSession.department}</p>
               <div className="mt-3 flex flex-wrap gap-2">
@@ -327,98 +357,86 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2.5 lg:justify-end">
+            <div className="flex flex-col items-start gap-2.5 sm:items-end lg:justify-end">
+              <div className="flex flex-wrap items-center gap-2.5 sm:justify-end">
               <div className="flex items-center gap-2 rounded-full bg-slate-100 px-4 py-2 text-slate-700">
                 <span className="text-xs font-semibold uppercase tracking-widest">
                   Student {nextStudentOrder} of {activeSession.number_of_students}
                 </span>
               </div>
-              {studentName && (
-                <div className="flex min-w-0 items-center gap-2 rounded-full bg-slate-900 px-5 py-2 text-white">
-                  <User className="h-4 w-4" />
-                  <span className="truncate text-sm font-semibold">{studentName}</span>
-                </div>
-              )}
               {phase !== "idle" && setupSeconds > 0 && (
                 <div className="flex items-center gap-2 rounded-full bg-amber-100 px-4 py-2 text-amber-800">
                   <Settings className="h-4 w-4" />
                   <span className="text-xs font-semibold">Setup {fmt(setupSeconds)}</span>
                 </div>
               )}
-              <div className="tabular-nums text-sm font-medium text-slate-400">{fmtClock(currentTime)}</div>
-              <button
-                onClick={() => setSoundEnabled((value) => !value)}
-                className={`rounded-full p-2.5 transition ${
-                  soundEnabled ? "text-slate-500 hover:bg-slate-100" : "bg-slate-200 text-slate-400"
-                }`}
-              >
-                <Volume2 className="h-4 w-4" />
-              </button>
+              </div>
             </div>
           </div>
         </div>
 
         {phase === "idle" && (
           <Card className="rounded-3xl border-0 shadow-sm">
-            <CardContent className="flex flex-col items-center gap-6 px-4 py-12 text-center sm:py-16">
-              <div className="rounded-3xl bg-slate-900 px-8 py-8 text-white shadow-inner sm:px-12 sm:py-10 md:px-20 md:py-14">
-                <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Ready</div>
-                <div className="mt-2 text-6xl font-bold tabular-nums md:text-8xl">{fmt(TOTAL)}</div>
+            <CardContent className="px-4 py-12 sm:py-16">
+              <div className="mx-auto flex w-full max-w-md flex-col items-center gap-5 text-center">
+                <div className="w-full rounded-[2rem] bg-slate-900 px-6 py-8 text-white shadow-inner sm:px-8 sm:py-10">
+                  <div className="text-xs uppercase tracking-[0.22em] text-slate-400">Ready</div>
+                  <div className="mt-2 text-6xl font-bold tabular-nums sm:text-7xl">{fmt(TOTAL)}</div>
+                </div>
+
+                <div className="flex w-full flex-wrap justify-center gap-2">
+                  <Badge className="rounded-full px-4 py-1.5 text-sm">
+                    {activeSession.subjects.length} Subjects &times; {fmt(plan.perSubjectSeconds)}
+                  </Badge>
+                  <Badge variant="secondary" className="rounded-full px-4 py-1.5 text-sm">
+                    Final Feedback {fmt(plan.feedbackSeconds)}
+                  </Badge>
+                  <Badge variant="outline" className="rounded-full px-4 py-1.5 text-sm">
+                    {feedbackModeLabel(feedbackMode)} mode
+                  </Badge>
+                </div>
+
+                <div className="flex w-full flex-wrap justify-center gap-2">
+                  {activeSession.subjects.map((subject, index) => (
+                    <span
+                      key={index}
+                      className="flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600"
+                    >
+                      <BookOpen className="h-3 w-3" /> {subject}
+                    </span>
+                  ))}
+                </div>
+
+                <Button
+                  size="lg"
+                  className="w-full rounded-2xl px-6 py-4 text-lg sm:py-5"
+                  onClick={openNameModal}
+                >
+                  <Play className="mr-2 h-6 w-6" />
+                  Start Prep Timer
+                </Button>
               </div>
-              <div className="flex flex-wrap justify-center gap-2">
-                <Badge className="rounded-full px-4 py-1 text-sm">
-                  {activeSession.subjects.length} Subjects &times; {fmt(plan.perSubjectSeconds)}
-                </Badge>
-                <Badge variant="secondary" className="rounded-full px-4 py-1 text-sm">
-                  Final Feedback {fmt(plan.feedbackSeconds)}
-                </Badge>
-                <Badge variant="outline" className="rounded-full px-4 py-1 text-sm">
-                  {feedbackModeLabel(feedbackMode)} mode
-                </Badge>
-              </div>
-              <div className="flex flex-wrap justify-center gap-1.5 sm:px-6">
-                {activeSession.subjects.map((subject, index) => (
-                  <span
-                    key={index}
-                    className="flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600"
-                  >
-                    <BookOpen className="h-3 w-3" /> {subject}
-                  </span>
-                ))}
-              </div>
-              <Button
-                size="lg"
-                className="w-full rounded-2xl px-6 py-4 text-lg sm:w-auto sm:px-10 sm:py-6"
-                onClick={openNameModal}
-              >
-                <Play className="mr-2 h-6 w-6" />
-                Start Prep Timer
-              </Button>
             </CardContent>
           </Card>
         )}
 
         {phase === "setup" && (
           <Card className="rounded-3xl border-0 shadow-sm">
-            <CardContent className="flex flex-col items-center gap-6 px-4 py-12 text-center sm:py-16">
-              <div className="rounded-3xl bg-amber-500 px-8 py-8 text-white shadow-inner sm:px-12 sm:py-10 md:px-20 md:py-14">
-                <div className="flex items-center justify-center gap-2 text-xs uppercase tracking-[0.2em] text-amber-100">
-                  <Settings className="h-4 w-4 animate-spin" style={{ animationDuration: "3s" }} />
-                  <span>Setting Up</span>
+            <CardContent className="px-4 py-12 sm:py-16">
+              <div className="mx-auto flex w-full max-w-md flex-col items-center gap-5 text-center">
+                <div className="w-full rounded-[2rem] bg-slate-900 px-6 py-14 text-white shadow-inner ring-1 ring-amber-200/30 sm:px-8 sm:py-16">
+                  <div className="text-6xl font-bold tabular-nums sm:text-7xl">{fmt(setupSeconds)}</div>
                 </div>
-                <div className="mt-2 text-6xl font-bold tabular-nums md:text-8xl">{fmt(setupSeconds)}</div>
+
+                <p className="max-w-sm text-slate-600">
+                  <strong>{studentName}</strong> is setting up. Start the presentation when everything is ready.
+                </p>
+
+                <Button size="lg" className="w-full rounded-2xl px-6 py-4 text-base sm:py-5" onClick={startPresentation}>
+                  <ChevronRight className="mr-2 h-5 w-5" />
+                  Start Presentation
+                </Button>
               </div>
-              <p className="max-w-md text-slate-500">
-                <strong>{studentName}</strong> is setting up. Click below when ready to present.
-              </p>
-              <Button
-                size="lg"
-                className="w-full rounded-2xl bg-emerald-600 px-6 py-4 text-base hover:bg-emerald-700 sm:w-auto sm:px-10"
-                onClick={startPresentation}
-              >
-                <ChevronRight className="mr-2 h-5 w-5" />
-                Start Presentation
-              </Button>
             </CardContent>
           </Card>
         )}
@@ -431,7 +449,7 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
               </CardHeader>
               <CardContent className="space-y-5 sm:space-y-6">
                 <div
-                  className={`rounded-3xl px-5 py-6 text-center text-white shadow-inner sm:px-8 sm:py-8 md:py-12 ${
+                  className={`rounded-3xl px-5 py-14 text-center text-white shadow-inner sm:px-8 sm:py-16 ${
                     phase === "finished"
                       ? "bg-emerald-700"
                       : isOvertime
@@ -521,90 +539,133 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                   </div>
                 )}
 
-                <div className="grid gap-3 pt-3 sm:grid-cols-2 xl:grid-cols-3">
-                  {phase === "finished" ? (
-                    <>
-                      {isSynchronousFeedback ? (
+                <div className="space-y-3 pt-3">
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setShowTimerHelp((value) => !value)}
+                      className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-500 shadow-sm transition hover:bg-slate-50 hover:text-slate-900"
+                      aria-expanded={showTimerHelp}
+                      aria-controls="timer-help-panel"
+                    >
+                      <Info className="h-4 w-4" />
+                      {showTimerHelp ? "Hide info" : "Info"}
+                    </button>
+                  </div>
+
+                  {showTimerHelp && (
+                    <div
+                      id="timer-help-panel"
+                      className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm leading-relaxed text-slate-600"
+                    >
+                      {TIMER_HELP_COPY}
+                    </div>
+                  )}
+
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    {phase === "finished" ? (
+                      <>
+                        {isSynchronousFeedback ? (
+                          <Button
+                            size="lg"
+                            className="w-full rounded-2xl px-6 py-4 text-lg sm:col-span-2 xl:col-span-1"
+                            onClick={() => void persistStudentRecord()}
+                            disabled={feedbackSaving}
+                          >
+                            <Save className="mr-2 h-5 w-5" />
+                            {feedbackSaving ? "Saving..." : "Save Feedback & Continue"}
+                          </Button>
+                        ) : (
+                          <Button
+                            size="lg"
+                            className="w-full rounded-2xl px-6 py-4 text-lg sm:col-span-2 xl:col-span-1"
+                            onClick={() => setShowFeedbackDialog(true)}
+                          >
+                            <Save className="mr-2 h-5 w-5" /> Add Feedback & Continue
+                          </Button>
+                        )}
                         <Button
                           size="lg"
-                          className="w-full rounded-2xl px-6 py-4 text-lg sm:col-span-2 xl:col-span-1"
-                          onClick={() => void persistStudentRecord()}
+                          variant="outline"
+                          className="w-full rounded-2xl px-6 py-4 text-lg"
+                          onClick={() => resetStudent()}
                           disabled={feedbackSaving}
                         >
-                          <Save className="mr-2 h-5 w-5" />
-                          {feedbackSaving ? "Saving..." : "Save Feedback & Continue"}
+                          <RotateCcw className="mr-2 h-5 w-5" /> Discard
                         </Button>
-                      ) : (
+                      </>
+                    ) : (
+                      <>
+                        {phase === "presenting" ? (
+                          <Button
+                            size="lg"
+                            variant="secondary"
+                            className="w-full rounded-2xl px-6 py-4 text-lg"
+                            onClick={pause}
+                          >
+                            <Pause className="mr-2 h-5 w-5" /> Pause
+                          </Button>
+                        ) : (
+                          <Button size="lg" className="w-full rounded-2xl px-6 py-4 text-lg" onClick={resume}>
+                            <Play className="mr-2 h-5 w-5" /> Resume
+                          </Button>
+                        )}
                         <Button
                           size="lg"
-                          className="w-full rounded-2xl px-6 py-4 text-lg sm:col-span-2 xl:col-span-1"
-                          onClick={() => setShowFeedbackDialog(true)}
+                          variant="outline"
+                          className="w-full rounded-2xl border-red-200 px-6 py-4 text-lg text-red-600 hover:bg-red-50 hover:text-red-700"
+                          onClick={finish}
                         >
-                          <Save className="mr-2 h-5 w-5" /> Add Feedback & Continue
+                          <Square className="mr-2 h-5 w-5" /> Finish
                         </Button>
-                      )}
-                      <Button
-                        size="lg"
-                        variant="outline"
-                        className="w-full rounded-2xl px-6 py-4 text-lg"
-                        onClick={() => resetStudent()}
-                        disabled={feedbackSaving}
-                      >
-                        <RotateCcw className="mr-2 h-5 w-5" /> Discard
-                      </Button>
-                    </>
-                  ) : (
-                    <>
-                      {phase === "presenting" ? (
                         <Button
                           size="lg"
-                          variant="secondary"
+                          variant="outline"
                           className="w-full rounded-2xl px-6 py-4 text-lg"
-                          onClick={pause}
+                          onClick={() => resetStudent()}
                         >
-                          <Pause className="mr-2 h-5 w-5" /> Pause
+                          <RotateCcw className="mr-2 h-5 w-5" /> Reset
                         </Button>
-                      ) : (
-                        <Button size="lg" className="w-full rounded-2xl px-6 py-4 text-lg" onClick={resume}>
-                          <Play className="mr-2 h-5 w-5" /> Resume
-                        </Button>
-                      )}
-                      <Button
-                        size="lg"
-                        variant="outline"
-                        className="w-full rounded-2xl border-red-200 px-6 py-4 text-lg text-red-600 hover:bg-red-50 hover:text-red-700"
-                        onClick={finish}
-                      >
-                        <Square className="mr-2 h-5 w-5" /> Finish
-                      </Button>
-                      <Button
-                        size="lg"
-                        variant="outline"
-                        className="w-full rounded-2xl px-6 py-4 text-lg"
-                        onClick={() => resetStudent()}
-                      >
-                        <RotateCcw className="mr-2 h-5 w-5" /> Reset
-                      </Button>
-                    </>
-                  )}
-                </div>
-
-                <div className="rounded-2xl border border-dashed border-slate-300 p-5 text-sm leading-relaxed text-slate-500">
-                  One click starts the full {fmt(TOTAL)} cycle. The app beeps once after each subject
-                  segment and gives a triple beep when time is up. The timer continues counting overtime
-                  so students can see how much extra time was used.
+                      </>
+                    )}
+                  </div>
                 </div>
 
                 {isSynchronousFeedback && (
-                  <div className="space-y-4 rounded-3xl bg-slate-50 p-6 ring-1 ring-slate-200">
-                    <div>
-                      <h3 className="text-lg font-semibold text-slate-900">Feedback Draft</h3>
-                    </div>
+                  <div className="space-y-4 rounded-3xl bg-slate-50 p-5 ring-1 ring-slate-200 sm:p-6">
+                    <div className="relative flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h3 className="text-lg font-semibold text-slate-900">Feedback Draft</h3>
+                        {activeSubject && phase !== "finished" && (
+                          <div className="mt-2">
+                            <Badge variant="secondary" className="rounded-full px-3 py-1 text-xs font-medium">
+                              Live subject: {activeSubject}
+                            </Badge>
+                          </div>
+                        )}
+                      </div>
 
-                    <div className="rounded-2xl bg-white p-4 text-sm text-slate-600 ring-1 ring-slate-200">
-                      {phase === "finished"
-                        ? "Review the live notes, then save once for this student."
-                        : "Write notes during the jury. They stay local on this device until you save or discard the student."}
+                      <div className="relative shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setShowFeedbackInfo((value) => !value)}
+                          className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white p-2 text-slate-500 shadow-sm transition hover:bg-slate-50 hover:text-slate-900"
+                          aria-expanded={showFeedbackInfo}
+                          aria-label="Show feedback help"
+                        >
+                          <Info className="h-4 w-4" />
+                        </button>
+
+                        {showFeedbackInfo && (
+                          <div className="absolute right-0 top-full z-10 mt-2 w-[min(18rem,calc(100vw-4rem))] rounded-2xl border border-slate-200 bg-white p-4 text-sm leading-relaxed text-slate-600 shadow-lg">
+                            <p>Drafts stay on this device until you save or discard the student.</p>
+                            <p className="mt-2">{feedbackModeDescription(feedbackMode)}</p>
+                            {phase === "finished" && (
+                              <p className="mt-2">Review the notes, then save once for this student.</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     <FeedbackEditor
@@ -621,10 +682,6 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                         {feedbackError}
                       </div>
                     )}
-
-                    <div className="text-xs leading-relaxed text-slate-400">
-                      {feedbackModeDescription(feedbackMode)}
-                    </div>
                   </div>
                 )}
               </CardContent>
@@ -711,7 +768,7 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                     return (
                       <div
                         key={`${segment.name}-${index}`}
-                        className={`flex flex-col gap-3 rounded-2xl px-5 py-3.5 ring-1 transition-all sm:flex-row sm:items-center sm:justify-between ${
+                        className={`rounded-2xl px-5 py-3.5 ring-1 transition-all ${
                           active
                             ? "bg-slate-900 text-white ring-slate-900"
                             : done
@@ -719,22 +776,26 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                             : "bg-white text-slate-700 ring-slate-200"
                         }`}
                       >
-                        <div className="min-w-0">
-                          <div className="text-sm font-semibold leading-snug">{segment.name}</div>
-                          <div
-                            className={`mt-0.5 text-xs leading-normal ${
-                              active ? "text-slate-300" : "text-slate-400"
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-semibold leading-snug">{segment.name}</div>
+                          </div>
+                          <Badge
+                            variant={active ? "secondary" : "outline"}
+                            className={`shrink-0 rounded-full ${
+                              done && !active ? "border-slate-200 text-slate-400" : ""
                             }`}
                           >
-                            {fmt(segment.seconds)}
-                          </div>
+                            {done ? "Done" : active ? "Live" : "Pending"}
+                          </Badge>
                         </div>
-                        <Badge
-                          variant={active ? "secondary" : "outline"}
-                          className={`rounded-full ${done && !active ? "border-slate-200 text-slate-400" : ""}`}
+                        <div
+                          className={`mt-1.5 text-xs leading-normal ${
+                            active ? "text-slate-300" : "text-slate-400"
+                          }`}
                         >
-                          {done ? "Done" : active ? "Live" : "Pending"}
-                        </Badge>
+                          {fmt(segment.seconds)}
+                        </div>
                       </div>
                     );
                   })}
@@ -773,49 +834,42 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
         }}
       />
 
-      {showNameModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-xl sm:p-8">
-            <h2 className="text-2xl font-bold text-slate-900">Student Name</h2>
-            <p className="mt-1 text-sm text-slate-500">Enter the student&apos;s name to begin setup.</p>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                void submitName();
-              }}
-            >
-              <input
-                ref={inputRef}
-                type="text"
-                value={nameInput}
-                onChange={(e) => setNameInput(e.target.value)}
-                placeholder="e.g. Aavriti Sharma"
-                className="mt-5 w-full rounded-2xl border border-slate-300 px-4 py-3 text-lg text-slate-900 outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-              />
-              <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row">
-                <Button
-                  type="submit"
-                  size="lg"
-                  className="w-full rounded-2xl sm:flex-1"
-                  disabled={!nameInput.trim()}
-                >
-                  <Settings className="mr-2 h-4 w-4" />
-                  Start Setup
-                </Button>
-                <Button
-                  type="button"
-                  size="lg"
-                  variant="outline"
-                  className="w-full rounded-2xl sm:w-auto"
-                  onClick={() => setShowNameModal(false)}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <Dialog open={showNameModal} onOpenChange={setShowNameModal}>
+        <DialogContent
+          className="max-w-md"
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            inputRef.current?.focus();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Student Name</DialogTitle>
+            <DialogDescription>Enter the student&apos;s name to begin setup.</DialogDescription>
+          </DialogHeader>
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void submitName();
+            }}
+            className="space-y-5"
+          >
+            <Input
+              ref={inputRef}
+              type="text"
+              value={nameInput}
+              onChange={(e) => setNameInput(e.target.value)}
+              placeholder="e.g. Aavriti Sharma"
+              className="h-14 rounded-2xl px-4 text-lg"
+            />
+
+            <Button type="submit" size="lg" className="w-full rounded-2xl" disabled={!nameInput.trim()}>
+              <Settings className="mr-2 h-4 w-4" />
+              Start Setup
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
