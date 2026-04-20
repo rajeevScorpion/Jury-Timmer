@@ -59,6 +59,14 @@ export function computePerStudentPlan(cfg: DayConfig): PerStudentPlan {
   };
 }
 
+export function allocatedPerStudentSeconds(
+  subjectCount: number,
+  perSubjectSeconds: number,
+  feedbackSeconds: number,
+): number {
+  return Math.max(0, subjectCount) * perSubjectSeconds + feedbackSeconds;
+}
+
 export function segmentIndexAt(elapsed: number, segments: Segment[]): number {
   let acc = 0;
   for (let i = 0; i < segments.length; i++) {

@@ -6,7 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { buildDayCsv, csvFilenameFor, downloadCsv } from "@/lib/csv";
-import { fmt } from "@/lib/timeFormat";
+import { allocatedPerStudentSeconds } from "@/lib/timing";
+import { fmt, fmtMinutes } from "@/lib/timeFormat";
 import {
   fetchJurySession,
   fetchSessionRecords,
@@ -98,6 +99,12 @@ export default function CompletedSessionDetailView() {
     return <Navigate to="/history" replace />;
   }
 
+  const perStudentSeconds = allocatedPerStudentSeconds(
+    session.subjects.length,
+    session.per_subject_seconds,
+    session.feedback_seconds,
+  );
+
   return (
     <div className="mx-auto max-w-6xl space-y-5 px-4 py-8 md:px-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -146,7 +153,7 @@ export default function CompletedSessionDetailView() {
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             <DetailStat label="Students planned" value={String(session.number_of_students)} />
             <DetailStat label="Reports saved" value={String(records.length)} />
-            <DetailStat label="Per student" value={fmt(session.total_time_seconds)} />
+            <DetailStat label="Per student" value={fmtMinutes(perStudentSeconds)} />
             <DetailStat label="Per subject" value={fmt(session.per_subject_seconds)} />
             <DetailStat label="Final feedback" value={fmt(session.feedback_seconds)} />
           </div>

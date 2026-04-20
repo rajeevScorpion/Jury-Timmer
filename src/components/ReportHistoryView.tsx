@@ -18,7 +18,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useAuth } from "@/context/AuthContext";
 import { useSession } from "@/context/SessionContext";
 import { buildDayCsv, csvFilenameFor, downloadCsv } from "@/lib/csv";
-import { fmt } from "@/lib/timeFormat";
+import { allocatedPerStudentSeconds } from "@/lib/timing";
+import { fmtMinutes } from "@/lib/timeFormat";
 import {
   fetchHistorySessions,
   fetchSessionRecords,
@@ -316,6 +317,11 @@ function HistorySection({
 
 function SessionSummary({ session }: { session: JurySession }) {
   const statusVariant = session.status === "completed" ? "secondary" : "default";
+  const perStudentSeconds = allocatedPerStudentSeconds(
+    session.subjects.length,
+    session.per_subject_seconds,
+    session.feedback_seconds,
+  );
 
   return (
     <div className="min-w-0 space-y-4">
@@ -351,7 +357,7 @@ function SessionSummary({ session }: { session: JurySession }) {
           label="Students"
           value={`${session.number_of_students} planned`}
         />
-        <SessionFact icon={<Clock3 className="h-4 w-4" />} label="Per student" value={fmt(session.total_time_seconds)} />
+        <SessionFact icon={<Clock3 className="h-4 w-4" />} label="Per student" value={fmtMinutes(perStudentSeconds)} />
         <SessionFact
           icon={<BookOpen className="h-4 w-4" />}
           label="Subjects"

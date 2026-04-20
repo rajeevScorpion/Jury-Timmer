@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/select";
 import { useSession } from "@/context/SessionContext";
 import { computePerStudentPlan, TimingConfigError } from "@/lib/timing";
-import { fmt } from "@/lib/timeFormat";
+import { fmt, fmtMinutes } from "@/lib/timeFormat";
 import {
   DEFAULT_FEEDBACK_MODE,
   feedbackModeDescription,
@@ -348,7 +348,7 @@ export default function DaySetupForm() {
         {preview && (
           <Card className="rounded-3xl border-0 bg-slate-50 shadow-none ring-1 ring-slate-200">
             <CardContent className="grid gap-3 py-5 text-sm sm:grid-cols-2 xl:grid-cols-5">
-              <Stat label="Per student" value={fmt(preview.totalSeconds)} />
+              <Stat label="Per student" value={fmtMinutes(preview.totalSeconds)} />
               <Stat label="Per subject" value={fmt(preview.perSubjectSeconds)} />
               <Stat label="Final feedback" value={fmt(preview.feedbackSeconds)} />
               <Stat label="Feedback mode" value={feedbackModeLabel(feedbackMode)} />

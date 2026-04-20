@@ -5,6 +5,13 @@ export function fmt(s: number): string {
   return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 }
 
+export function fmtMinutes(s: number): string {
+  const abs = Math.max(0, Math.floor(s));
+  const minutes = abs / 60;
+  const label = Number.isInteger(minutes) ? String(minutes) : minutes.toFixed(1).replace(/\.0$/, "");
+  return `${label} min`;
+}
+
 export function fmtClock(d: Date | null): string {
   if (!d) return "--:--";
   return d.toLocaleTimeString([], {
