@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   BookOpen,
@@ -9,16 +9,29 @@ import {
   ChevronUp,
   Clock3,
   Download,
+  Minus,
+  Play,
+  Plus,
   Users,
 } from "lucide-react";
 import SessionStudentRow from "@/components/SessionStudentRow";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { useAuth } from "@/context/AuthContext";
 import { useSession } from "@/context/SessionContext";
 import { buildDayCsv, csvFilenameFor, downloadCsv } from "@/lib/csv";
-import { fmt } from "@/lib/timeFormat";
+import { supabase } from "@/lib/supabase";
+import { fmtHM } from "@/lib/timeFormat";
+import { computeRemainingPlan, validateStudentCountChange } from "@/lib/timing";
 import {
   fetchHistorySessions,
   fetchSessionRecords,
@@ -31,13 +44,96 @@ import type { JurySession, StudentRecord } from "@/types/session";
 export default function ReportHistoryView() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { activeSession, reload } = useSession();
+  const { activeSession, reload, resumeSession } = useSession();
   const [sessions, setSessions] = useState<JurySession[]>([]);
   const [recordsBySession, setRecordsBySession] = useState<Record<string, StudentRecord[]>>({});
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [actionError, setActionError] = useState<string | null>(null);
   const [closingSessionId, setClosingSessionId] = useState<string | null>(null);
+
+  const [adjustSession, setAdjustSession] = useState<JurySession | null>(null);
+  const [adjustedCount, setAdjustedCount] = useState(0);
+  const [adjustCompletedCount, setAdjustCompletedCount] = useState(0);
+  const [adjustConsumed, setAdjustConsumed] = useState(0);
+  const [adjusting, setAdjusting] = useState(false);
+  const [adjustError, setAdjustError] = useState<string | null>(null);
+
+  const adjustRemaining = adjustedCount - adjustCompletedCount;
+  const adjustValidation = useMemo(() => {
+    if (!adjustSession || adjustedCount === adjustSession.number_of_students) return null;
+    if (adjustRemaining < 1) return "At least one remaining student is required.";
+    return validateStudentCountChange({
+      totalSeconds: adjustSession.total_time_seconds,
+      consumedSeconds: adjustConsumed,
+      remainingStudents: adjustRemaining,
+      bufferSeconds: adjustSession.buffer_seconds,
+      subjects: adjustSession.subjects,
+      feedbackSeconds: adjustSession.feedback_seconds,
+    });
+  }, [adjustSession, adjustedCount, adjustConsumed, adjustRemaining]);
+
+  const adjustPreview = useMemo(() => {
+    if (!adjustSession || adjustValidation || adjustedCount === adjustSession.number_of_students) return null;
+    const remainingTime = adjustSession.total_time_seconds - adjustConsumed;
+    const futureBuffers = adjustSession.buffer_seconds * Math.max(adjustRemaining - 1, 0);
+    return Math.floor((remainingTime - futureBuffers) / adjustRemaining);
+  }, [adjustSession, adjustValidation, adjustedCount, adjustConsumed, adjustRemaining]);
+
+  const openAdjustDialog = useCallback(async (session: JurySession) => {
+    const { data, error } = await supabase
+      .from("student_records")
+      .select("presentation_seconds, overtime_seconds")
+      .eq("session_id", session.id);
+    const records = (!error && data) ? data : [];
+    const completedCount = records.length;
+    const presentationTime = records.reduce(
+      (sum, r) => sum + ((r.presentation_seconds ?? 0) + (r.overtime_seconds ?? 0)),
+      0,
+    );
+    const consumed = presentationTime + completedCount * session.buffer_seconds;
+
+    setAdjustSession(session);
+    setAdjustedCount(session.number_of_students);
+    setAdjustCompletedCount(completedCount);
+    setAdjustConsumed(consumed);
+    setAdjustError(null);
+  }, []);
+
+  const handleAdjustCount = useCallback(async () => {
+    if (!adjustSession || adjustValidation || adjustedCount === adjustSession.number_of_students) return;
+    try {
+      setAdjusting(true);
+      setAdjustError(null);
+      const newPlan = computeRemainingPlan({
+        totalSeconds: adjustSession.total_time_seconds,
+        consumedSeconds: adjustConsumed,
+        remainingStudents: adjustRemaining,
+        bufferSeconds: adjustSession.buffer_seconds,
+        subjects: adjustSession.subjects,
+        feedbackSeconds: adjustSession.feedback_seconds,
+      });
+      const { error } = await supabase
+        .from("jury_sessions")
+        .update({ number_of_students: adjustedCount, per_subject_seconds: newPlan.perSubjectSeconds })
+        .eq("id", adjustSession.id);
+      if (error) throw new Error(error.message ?? "Failed to update student count");
+
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.id === adjustSession.id
+            ? { ...s, number_of_students: adjustedCount, per_subject_seconds: newPlan.perSubjectSeconds }
+            : s,
+        ),
+      );
+      if (activeSession?.id === adjustSession.id) await reload();
+      setAdjustSession(null);
+    } catch (err) {
+      setAdjustError(err instanceof Error ? err.message : "Failed to adjust student count");
+    } finally {
+      setAdjusting(false);
+    }
+  }, [adjustSession, adjustValidation, adjustedCount, adjustConsumed, adjustRemaining, activeSession, reload]);
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -174,6 +270,16 @@ export default function ReportHistoryView() {
                 <div className="mt-4 border-t border-slate-200 pt-4">
                   <div className="grid gap-2 sm:flex sm:flex-wrap">
                     <Button
+                      size="sm"
+                      className="w-full justify-center rounded-full sm:w-auto"
+                      onClick={() => {
+                        void resumeSession(session.id).then(() => navigate("/jury"));
+                      }}
+                    >
+                      <Play className="h-4 w-4" />
+                      Resume Jury
+                    </Button>
+                    <Button
                       variant="secondary"
                       size="sm"
                       className="w-full justify-center rounded-full sm:w-auto"
@@ -191,6 +297,15 @@ export default function ReportHistoryView() {
                     >
                       <Download className="h-4 w-4" />
                       CSV
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full justify-center rounded-full sm:w-auto"
+                      onClick={() => void openAdjustDialog(session)}
+                    >
+                      <Users className="h-4 w-4" />
+                      Adjust Students
                     </Button>
                     <Button
                       variant="outline"
@@ -270,6 +385,123 @@ export default function ReportHistoryView() {
           </Card>
         ))}
       </HistorySection>
+
+      <Dialog open={!!adjustSession} onOpenChange={(open) => { if (!open) setAdjustSession(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Adjust Student Count</DialogTitle>
+            <DialogDescription>
+              Add or remove students. Remaining time will be redistributed equally.
+            </DialogDescription>
+          </DialogHeader>
+
+          {adjustSession && (
+            <div className="space-y-4">
+              <div className="rounded-2xl bg-slate-50 p-4 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Completed</span>
+                  <span className="font-semibold text-slate-900">{adjustCompletedCount} students</span>
+                </div>
+                <div className="mt-2 flex justify-between">
+                  <span className="text-slate-600">Remaining</span>
+                  <span className="font-semibold text-slate-900">
+                    {adjustSession.number_of_students - adjustCompletedCount} students
+                  </span>
+                </div>
+                <div className="mt-3 border-t border-slate-200 pt-3">
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Time remaining</span>
+                    <span className="font-semibold text-emerald-700">
+                      {fmtHM(Math.max(adjustSession.total_time_seconds - adjustConsumed, 0))}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">New Total Student Count</label>
+                <div className="flex items-center gap-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-12 w-12 shrink-0 rounded-2xl p-0"
+                    onClick={() => setAdjustedCount((c) => Math.max(adjustCompletedCount + 1, c - 1))}
+                    disabled={adjustedCount <= adjustCompletedCount + 1}
+                  >
+                    <Minus className="h-4 w-4" />
+                  </Button>
+
+                  <Input
+                    type="number"
+                    min={adjustCompletedCount + 1}
+                    max={99}
+                    value={adjustedCount}
+                    onChange={(e) => {
+                      const v = parseInt(e.target.value);
+                      if (!isNaN(v)) setAdjustedCount(Math.max(adjustCompletedCount + 1, Math.min(99, v)));
+                    }}
+                    className="h-12 rounded-2xl text-center text-lg font-semibold"
+                  />
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-12 w-12 shrink-0 rounded-2xl p-0"
+                    onClick={() => setAdjustedCount((c) => Math.min(99, c + 1))}
+                    disabled={adjustedCount >= 99}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+
+                {adjustedCount !== adjustSession.number_of_students && !adjustValidation && adjustPreview !== null && (
+                  <p className="text-sm text-slate-600">
+                    {adjustedCount > adjustSession.number_of_students
+                      ? `Adding ${adjustedCount - adjustSession.number_of_students}`
+                      : `Removing ${adjustSession.number_of_students - adjustedCount}`}{" "}
+                    student{Math.abs(adjustedCount - adjustSession.number_of_students) !== 1 ? "s" : ""} &middot; New
+                    time per student: {fmtHM(adjustPreview)}
+                  </p>
+                )}
+              </div>
+
+              {adjustValidation && (
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {adjustValidation}
+                </div>
+              )}
+
+              {adjustError && (
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {adjustError}
+                </div>
+              )}
+
+              <div className="flex gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1 rounded-2xl"
+                  onClick={() => setAdjustSession(null)}
+                  disabled={adjusting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="flex-1 rounded-2xl"
+                  onClick={() => void handleAdjustCount()}
+                  disabled={adjusting || !!adjustValidation || adjustedCount === adjustSession.number_of_students}
+                >
+                  {adjusting ? "Updating..." : "Update Count"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -351,7 +583,7 @@ function SessionSummary({ session }: { session: JurySession }) {
           label="Students"
           value={`${session.number_of_students} planned`}
         />
-        <SessionFact icon={<Clock3 className="h-4 w-4" />} label="Per student" value={fmt(session.total_time_seconds)} />
+        <SessionFact icon={<Clock3 className="h-4 w-4" />} label="Per student" value={fmtHM(session.per_subject_seconds * session.subjects.length + session.feedback_seconds)} />
         <SessionFact
           icon={<BookOpen className="h-4 w-4" />}
           label="Subjects"

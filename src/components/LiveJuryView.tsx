@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,16 +24,20 @@ import {
   BookOpen,
   Save,
   Info,
+  Plus,
+  Minus,
+  Users,
 } from "lucide-react";
-import { fmt, fmtClock } from "@/lib/timeFormat";
+import { fmt, fmtClock, fmtHM } from "@/lib/timeFormat";
 import { beep, ensureAudio } from "@/lib/audio";
 import type { Feedback, JurySession } from "@/types/session";
 import {
-  computePerStudentPlan,
   checkpointsFor,
   segmentIndexAt,
   segmentStart,
+  validateStudentCountChange,
   type PerStudentPlan,
+  type Segment,
 } from "@/lib/timing";
 import { useSession } from "@/context/SessionContext";
 import FeedbackDialog from "@/components/FeedbackDialog";
@@ -75,18 +79,16 @@ function errorMessage(err: unknown): string {
 
 export default function LiveJuryView({ activeSession }: { activeSession: JurySession }) {
   const navigate = useNavigate();
-  const { saveStudentRecord, completeSession, studentsCompleted, nextStudentOrder } = useSession();
-  const plan: PerStudentPlan = useMemo(
-    () =>
-      computePerStudentPlan({
-        totalSeconds: activeSession.total_time_seconds,
-        students: activeSession.number_of_students,
-        bufferSeconds: activeSession.buffer_seconds,
-        subjects: activeSession.subjects,
-        feedbackSeconds: activeSession.feedback_seconds,
-      }),
-    [activeSession],
-  );
+  const { saveStudentRecord, completeSession, studentsCompleted, nextStudentOrder, adjustStudentCount, getConsumedSeconds } = useSession();
+  const plan: PerStudentPlan = useMemo(() => {
+    const perSubject = activeSession.per_subject_seconds;
+    const segments: Segment[] = [
+      ...activeSession.subjects.map((name) => ({ name, seconds: perSubject, kind: "subject" as const })),
+      { name: "Final Feedback", seconds: activeSession.feedback_seconds, kind: "feedback" as const },
+    ];
+    const totalSeconds = segments.reduce((sum, s) => sum + s.seconds, 0);
+    return { perSubjectSeconds: perSubject, feedbackSeconds: activeSession.feedback_seconds, segments, totalSeconds };
+  }, [activeSession]);
 
   const TOTAL = plan.totalSeconds;
   const segments = plan.segments;
@@ -112,6 +114,12 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
   const [feedbackDraft, setFeedbackDraft] = useState<Feedback>(() => createEmptyFeedback());
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
   const [feedbackSaving, setFeedbackSaving] = useState(false);
+
+  const [showAdjustDialog, setShowAdjustDialog] = useState(false);
+  const [adjustedCount, setAdjustedCount] = useState(activeSession.number_of_students);
+  const [adjusting, setAdjusting] = useState(false);
+  const [adjustError, setAdjustError] = useState<string | null>(null);
+  const [consumedSeconds, setConsumedSeconds] = useState(0);
 
   const [setupStartTime, setSetupStartTime] = useState<Date | null>(null);
   const [presentationStartTime, setPresentationStartTime] = useState<Date | null>(null);
@@ -228,6 +236,50 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
     setFeedbackError(null);
   };
 
+  const remainingStudents = adjustedCount - studentsCompleted;
+  const adjustValidation = useMemo(() => {
+    if (adjustedCount === activeSession.number_of_students) return null;
+    if (remainingStudents < 1) return "At least one remaining student is required.";
+    return validateStudentCountChange({
+      totalSeconds: activeSession.total_time_seconds,
+      consumedSeconds,
+      remainingStudents,
+      bufferSeconds: activeSession.buffer_seconds,
+      subjects: activeSession.subjects,
+      feedbackSeconds: activeSession.feedback_seconds,
+    });
+  }, [adjustedCount, activeSession, consumedSeconds, remainingStudents]);
+
+  const adjustPreview = useMemo(() => {
+    if (adjustValidation || adjustedCount === activeSession.number_of_students) return null;
+    const remainingTime = activeSession.total_time_seconds - consumedSeconds;
+    const futureBuffers = activeSession.buffer_seconds * Math.max(remainingStudents - 1, 0);
+    const perStudent = Math.floor((remainingTime - futureBuffers) / remainingStudents);
+    return perStudent;
+  }, [adjustValidation, adjustedCount, activeSession, consumedSeconds, remainingStudents]);
+
+  const openAdjustDialog = useCallback(async () => {
+    setAdjustedCount(activeSession.number_of_students);
+    setAdjustError(null);
+    const consumed = await getConsumedSeconds();
+    setConsumedSeconds(consumed);
+    setShowAdjustDialog(true);
+  }, [activeSession.number_of_students, getConsumedSeconds]);
+
+  const handleAdjustCount = useCallback(async () => {
+    if (adjustValidation || adjustedCount === activeSession.number_of_students) return;
+    try {
+      setAdjusting(true);
+      setAdjustError(null);
+      await adjustStudentCount(adjustedCount);
+      setShowAdjustDialog(false);
+    } catch (err) {
+      setAdjustError(err instanceof Error ? err.message : "Failed to adjust student count");
+    } finally {
+      setAdjusting(false);
+    }
+  }, [adjustValidation, adjustedCount, activeSession.number_of_students, adjustStudentCount]);
+
   const resetStudent = (storageKey: string = draftStorageId) => {
     setPhase("idle");
     setStudentName("");
@@ -318,7 +370,7 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
     }
   };
 
-  const perStudentLabel = `${fmt(TOTAL)} per student`;
+  const perStudentLabel = `${fmtHM(TOTAL)} per student`;
 
   return (
     <div ref={pageRef} className="p-3 sm:p-4 md:p-8 lg:p-10">
@@ -414,6 +466,15 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                 >
                   <Play className="mr-2 h-6 w-6" />
                   Start Prep Timer
+                </Button>
+
+                <Button
+                  variant="outline"
+                  className="rounded-2xl px-5 py-3 text-sm"
+                  onClick={() => void openAdjustDialog()}
+                >
+                  <Users className="mr-2 h-4 w-4" />
+                  Adjust Student Count
                 </Button>
               </div>
             </CardContent>
@@ -868,6 +929,121 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
               Start Setup
             </Button>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showAdjustDialog} onOpenChange={setShowAdjustDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Adjust Student Count</DialogTitle>
+            <DialogDescription>
+              Add or remove students. Remaining time will be redistributed equally.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="rounded-2xl bg-slate-50 p-4 text-sm">
+              <div className="flex justify-between">
+                <span className="text-slate-600">Completed</span>
+                <span className="font-semibold text-slate-900">{studentsCompleted} students</span>
+              </div>
+              <div className="mt-2 flex justify-between">
+                <span className="text-slate-600">Remaining</span>
+                <span className="font-semibold text-slate-900">
+                  {activeSession.number_of_students - studentsCompleted} students
+                </span>
+              </div>
+              <div className="mt-3 border-t border-slate-200 pt-3">
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Time remaining</span>
+                  <span className="font-semibold text-emerald-700">
+                    {fmtHM(Math.max(activeSession.total_time_seconds - consumedSeconds, 0))}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-700">New Total Student Count</label>
+              <div className="flex items-center gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-12 w-12 shrink-0 rounded-2xl p-0"
+                  onClick={() => setAdjustedCount((c) => Math.max(studentsCompleted + 1, c - 1))}
+                  disabled={adjustedCount <= studentsCompleted + 1}
+                >
+                  <Minus className="h-4 w-4" />
+                </Button>
+
+                <Input
+                  type="number"
+                  min={studentsCompleted + 1}
+                  max={99}
+                  value={adjustedCount}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value);
+                    if (!isNaN(v)) setAdjustedCount(Math.max(studentsCompleted + 1, Math.min(99, v)));
+                  }}
+                  className="h-12 rounded-2xl text-center text-lg font-semibold"
+                />
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-12 w-12 shrink-0 rounded-2xl p-0"
+                  onClick={() => setAdjustedCount((c) => Math.min(99, c + 1))}
+                  disabled={adjustedCount >= 99}
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+
+              {adjustedCount !== activeSession.number_of_students && !adjustValidation && adjustPreview !== null && (
+                <p className="text-sm text-slate-600">
+                  {adjustedCount > activeSession.number_of_students
+                    ? `Adding ${adjustedCount - activeSession.number_of_students}`
+                    : `Removing ${activeSession.number_of_students - adjustedCount}`}{" "}
+                  student{Math.abs(adjustedCount - activeSession.number_of_students) !== 1 ? "s" : ""} &middot; New
+                  time per student: {fmtHM(adjustPreview)}
+                </p>
+              )}
+            </div>
+
+            {adjustValidation && (
+              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {adjustValidation}
+              </div>
+            )}
+
+            {adjustError && (
+              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {adjustError}
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1 rounded-2xl"
+                onClick={() => setShowAdjustDialog(false)}
+                disabled={adjusting}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                className="flex-1 rounded-2xl"
+                onClick={() => void handleAdjustCount()}
+                disabled={adjusting || !!adjustValidation || adjustedCount === activeSession.number_of_students}
+              >
+                {adjusting ? "Updating..." : "Update Count"}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

@@ -1,6 +1,6 @@
 import type { JurySession, StudentRecord } from "@/types/session";
 import { appName } from "@/lib/brand";
-import { fmt } from "@/lib/timeFormat";
+import { fmt, fmtHM } from "@/lib/timeFormat";
 
 type Props = {
   session: JurySession;
@@ -75,8 +75,8 @@ export default function StudentReportPrintable({ session, record }: Props) {
           ))}
         </div>
         <div style={{ fontSize: 12, color: "#64748b", marginTop: 6 }}>
-          {session.subjects.length} subjects × {fmt(session.per_subject_seconds)} + final feedback{" "}
-          {fmt(session.feedback_seconds)}
+          {session.subjects.length} subjects × {fmtHM(session.per_subject_seconds)} + final feedback{" "}
+          {fmtHM(session.feedback_seconds)}
         </div>
       </Section>
 

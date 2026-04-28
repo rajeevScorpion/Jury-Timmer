@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { buildDayCsv, csvFilenameFor, downloadCsv } from "@/lib/csv";
-import { fmt } from "@/lib/timeFormat";
+import { fmt, fmtHM } from "@/lib/timeFormat";
 import {
   fetchJurySession,
   fetchSessionRecords,
@@ -146,9 +146,9 @@ export default function CompletedSessionDetailView() {
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             <DetailStat label="Students planned" value={String(session.number_of_students)} />
             <DetailStat label="Reports saved" value={String(records.length)} />
-            <DetailStat label="Per student" value={fmt(session.total_time_seconds)} />
-            <DetailStat label="Per subject" value={fmt(session.per_subject_seconds)} />
-            <DetailStat label="Final feedback" value={fmt(session.feedback_seconds)} />
+            <DetailStat label="Per student" value={fmtHM(session.per_subject_seconds * session.subjects.length + session.feedback_seconds)} />
+            <DetailStat label="Per subject" value={fmtHM(session.per_subject_seconds)} />
+            <DetailStat label="Final feedback" value={fmtHM(session.feedback_seconds)} />
           </div>
 
           {records.length < session.number_of_students && (
