@@ -59,6 +59,60 @@ export function computePerStudentPlan(cfg: DayConfig): PerStudentPlan {
   };
 }
 
+export type RemainingTimeConfig = {
+  totalSeconds: number;
+  consumedSeconds: number;
+  remainingStudents: number;
+  bufferSeconds: number;
+  subjects: string[];
+  feedbackSeconds: number;
+};
+
+export function computeRemainingPlan(cfg: RemainingTimeConfig): PerStudentPlan {
+  if (cfg.remainingStudents < 1) throw new TimingConfigError("At least one remaining student is required.");
+  if (cfg.subjects.length < 1) throw new TimingConfigError("At least one subject is required.");
+  if (cfg.totalSeconds <= 0) throw new TimingConfigError("Total time must be positive.");
+
+  const remainingTime = cfg.totalSeconds - cfg.consumedSeconds;
+  if (remainingTime <= 0) throw new TimingConfigError("No time remaining in session.");
+
+  const futureBuffers = cfg.bufferSeconds * Math.max(cfg.remainingStudents - 1, 0);
+  const perStudent = Math.floor((remainingTime - futureBuffers) / cfg.remainingStudents);
+
+  if (perStudent <= cfg.feedbackSeconds) {
+    throw new TimingConfigError(
+      "Not enough time per student after buffer and feedback. Reduce students or increase time.",
+    );
+  }
+
+  const perSubject = Math.floor((perStudent - cfg.feedbackSeconds) / cfg.subjects.length);
+  if (perSubject < MIN_SEGMENT_SECONDS) {
+    throw new TimingConfigError(
+      `Each subject would get less than ${MIN_SEGMENT_SECONDS}s. Cannot adjust student count further.`,
+    );
+  }
+
+  const segments: Segment[] = [
+    ...cfg.subjects.map((name) => ({ name, seconds: perSubject, kind: "subject" as const })),
+    { name: "Final Feedback", seconds: cfg.feedbackSeconds, kind: "feedback" as const },
+  ];
+  const totalSeconds = segments.reduce((sum, s) => sum + s.seconds, 0);
+
+  return { perSubjectSeconds: perSubject, feedbackSeconds: cfg.feedbackSeconds, segments, totalSeconds };
+}
+
+export function validateStudentCountChange(
+  cfg: RemainingTimeConfig,
+): string | null {
+  try {
+    computeRemainingPlan(cfg);
+    return null;
+  } catch (err) {
+    if (err instanceof TimingConfigError) return err.message;
+    return "Unable to validate student count change.";
+  }
+}
+
 export function segmentIndexAt(elapsed: number, segments: Segment[]): number {
   let acc = 0;
   for (let i = 0; i < segments.length; i++) {

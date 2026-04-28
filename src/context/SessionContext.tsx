@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import type { DaySetupInput, Feedback, JurySession, StudentRecord } from "@/types/session";
-import { computePerStudentPlan } from "@/lib/timing";
+import { computePerStudentPlan, computeRemainingPlan } from "@/lib/timing";
 
 const LS_KEY = "juryTimer.activeSessionId";
 
@@ -30,6 +30,9 @@ type SessionValue = {
   completeSession: () => Promise<void>;
   saveStudentRecord: (input: StudentRecordInput) => Promise<StudentRecord>;
   reload: () => Promise<void>;
+  resumeSession: (sessionId: string) => Promise<void>;
+  getConsumedSeconds: () => Promise<number>;
+  adjustStudentCount: (newTotal: number) => Promise<void>;
 };
 
 const SessionCtx = createContext<SessionValue | null>(null);
@@ -138,6 +141,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setStudentsCompleted(0);
   }, []);
 
+  const resumeSession = useCallback(
+    async (sessionId: string) => {
+      const s = await loadById(sessionId);
+      if (!s || s.status !== "active") throw new Error("Session is no longer active.");
+      localStorage.setItem(LS_KEY, sessionId);
+      setActiveSession(s);
+      setStudentsCompleted(await loadStudentCount(s.id));
+    },
+    [loadById, loadStudentCount],
+  );
+
   const completeSession = useCallback(async () => {
     if (!activeSession) return;
     await supabase
@@ -178,6 +192,50 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [user, activeSession, studentsCompleted],
   );
 
+  const getConsumedSeconds = useCallback(async (): Promise<number> => {
+    if (!activeSession) return 0;
+    const { data, error } = await supabase
+      .from("student_records")
+      .select("presentation_seconds, overtime_seconds")
+      .eq("session_id", activeSession.id);
+    if (error || !data) return 0;
+    const presentationTime = data.reduce(
+      (sum, r) => sum + ((r.presentation_seconds ?? 0) + (r.overtime_seconds ?? 0)),
+      0,
+    );
+    return presentationTime + studentsCompleted * activeSession.buffer_seconds;
+  }, [activeSession, studentsCompleted]);
+
+  const adjustStudentCount = useCallback(
+    async (newTotal: number) => {
+      if (!user) throw new Error("Not signed in");
+      if (!activeSession) throw new Error("No active session");
+      const remainingStudents = newTotal - studentsCompleted;
+      if (remainingStudents < 1) throw new Error("At least one remaining student is required.");
+
+      const consumedSeconds = await getConsumedSeconds();
+      const newPlan = computeRemainingPlan({
+        totalSeconds: activeSession.total_time_seconds,
+        consumedSeconds,
+        remainingStudents,
+        bufferSeconds: activeSession.buffer_seconds,
+        subjects: activeSession.subjects,
+        feedbackSeconds: activeSession.feedback_seconds,
+      });
+
+      const { error } = await supabase
+        .from("jury_sessions")
+        .update({
+          number_of_students: newTotal,
+          per_subject_seconds: newPlan.perSubjectSeconds,
+        })
+        .eq("id", activeSession.id);
+      if (error) throw new Error(error.message ?? "Failed to update student count");
+      await reload();
+    },
+    [user, activeSession, studentsCompleted, getConsumedSeconds, reload],
+  );
+
   const nextStudentOrder = studentsCompleted + 1;
   const isDayComplete = activeSession
     ? studentsCompleted >= activeSession.number_of_students
@@ -196,6 +254,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         completeSession,
         saveStudentRecord,
         reload,
+        resumeSession,
+        getConsumedSeconds,
+        adjustStudentCount,
       }}
     >
       {children}

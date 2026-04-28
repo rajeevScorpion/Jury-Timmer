@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp, Loader2, Sparkles, Undo2 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { Feedback } from "@/types/session";
+import AiImproveButton from "@/components/AiImproveButton";
+import { generateOverallFeedback } from "@/lib/ai-feedback";
 
 type Props = {
   feedback: Feedback;
@@ -25,6 +27,11 @@ export default function FeedbackEditor({
 }: Props) {
   const [expandedSubject, setExpandedSubject] = useState<string | null>(null);
   const subjectRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
+
+  // Generate-overall state
+  const [generatingOverall, setGeneratingOverall] = useState(false);
+  const [originalOverall, setOriginalOverall] = useState<string | null>(null);
+  const [overallError, setOverallError] = useState<string | null>(null);
 
   useEffect(() => {
     setExpandedSubject((current) => {
@@ -75,20 +82,99 @@ export default function FeedbackEditor({
     });
   };
 
+  const handleGenerateOverall = async () => {
+    setOverallError(null);
+    setOriginalOverall(feedback.final);
+    setGeneratingOverall(true);
+    try {
+      const result = await generateOverallFeedback(
+        feedback.perSubject,
+        feedback.final
+      );
+      updateFinal(result);
+    } catch (err) {
+      setOverallError(err instanceof Error ? err.message : "AI failed");
+      setOriginalOverall(null);
+    } finally {
+      setGeneratingOverall(false);
+    }
+  };
+
+  const handleRevertOverall = () => {
+    if (originalOverall !== null) {
+      updateFinal(originalOverall);
+      setOriginalOverall(null);
+    }
+  };
+
+  const hasAnySubjectContent = Object.values(feedback.perSubject).some(
+    (v) => v.trim().length > 0
+  );
+  const canGenerateOverall =
+    (hasAnySubjectContent || feedback.final.trim().length >= 5) &&
+    !generatingOverall;
+
   return (
     <div className="space-y-4">
       <div>
         <label className="block text-xs font-medium uppercase tracking-widest text-slate-500">
           Overall feedback {finalRequired && <span className="text-red-500">*</span>}
         </label>
-        <Textarea
-          value={feedback.final}
-          onChange={(e) => updateFinal(e.target.value)}
-          placeholder="Overall feedback for the student..."
-          rows={compact ? 5 : 6}
-          autoFocus={finalAutoFocus}
-          className="mt-3 min-h-[132px] bg-white leading-relaxed"
-        />
+        <div className="relative mt-3">
+          <Textarea
+            value={feedback.final}
+            onChange={(e) => updateFinal(e.target.value)}
+            placeholder="Overall feedback for the student..."
+            rows={compact ? 5 : 6}
+            autoFocus={finalAutoFocus}
+            className="min-h-[132px] bg-white pr-10 pb-8 leading-relaxed"
+          />
+          <div className="absolute bottom-2 right-2">
+            <AiImproveButton
+              text={feedback.final}
+              onImproved={updateFinal}
+            />
+          </div>
+        </div>
+
+        {/* Generate Overall Feedback button */}
+        {subjects.length > 0 && (
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleGenerateOverall}
+              disabled={!canGenerateOverall}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
+                canGenerateOverall
+                  ? "bg-blue-50 text-blue-700 hover:bg-blue-100"
+                  : "cursor-not-allowed bg-slate-50 text-slate-400"
+              )}
+            >
+              {generatingOverall ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Sparkles className="h-3.5 w-3.5" />
+              )}
+              Generate from subjects
+            </button>
+
+            {originalOverall !== null && !generatingOverall && (
+              <button
+                type="button"
+                onClick={handleRevertOverall}
+                className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
+              >
+                <Undo2 className="h-3 w-3" />
+                Revert
+              </button>
+            )}
+
+            {overallError && (
+              <span className="text-[11px] text-red-500">{overallError}</span>
+            )}
+          </div>
+        )}
       </div>
 
       {subjects.length > 0 && (
@@ -144,16 +230,26 @@ export default function FeedbackEditor({
 
                 {expanded && (
                   <div className="border-t border-slate-200 px-4 pb-4 pt-3">
-                    <Textarea
-                      ref={(node) => {
-                        subjectRefs.current[subject] = node;
-                      }}
-                      value={note}
-                      onChange={(e) => updateSubject(subject, e.target.value)}
-                      rows={compact ? 4 : 5}
-                      placeholder={`Notes on ${subject}...`}
-                      className="min-h-[120px] leading-relaxed"
-                    />
+                    <div className="relative">
+                      <Textarea
+                        ref={(node) => {
+                          subjectRefs.current[subject] = node;
+                        }}
+                        value={note}
+                        onChange={(e) => updateSubject(subject, e.target.value)}
+                        rows={compact ? 4 : 5}
+                        placeholder={`Notes on ${subject}...`}
+                        className="min-h-[120px] pb-8 leading-relaxed"
+                      />
+                      <div className="absolute bottom-2 right-2">
+                        <AiImproveButton
+                          text={note}
+                          onImproved={(improved) =>
+                            updateSubject(subject, improved)
+                          }
+                        />
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
