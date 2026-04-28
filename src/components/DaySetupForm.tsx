@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Trash2, ArrowUp, ArrowDown, Play } from "lucide-react";
+import { Plus, Trash2, ArrowUp, ArrowDown, Play, Upload } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,7 +22,8 @@ import {
   feedbackModeOptions,
   fetchDefaultFeedbackMode,
 } from "@/lib/appSettings";
-import type { FeedbackMode } from "@/types/session";
+import type { FeedbackMode, RosterEntry } from "@/types/session";
+import { parseRosterText, rawToRosterEntries } from "@/lib/rosterParse";
 
 const SECTIONS = ["A", "B", "C", "D", "E"];
 const SEMESTERS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"];
@@ -56,6 +57,10 @@ export default function DaySetupForm() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [settingsHint, setSettingsHint] = useState("Loading admin default...");
+  const [roster, setRoster] = useState<RosterEntry[]>([]);
+  const [rosterMode, setRosterMode] = useState<"manual" | "roster">("manual");
+  const [rosterError, setRosterError] = useState<string | null>(null);
+  const [pasteText, setPasteText] = useState("");
   const feedbackModeTouched = useRef(false);
 
   const ayOptions = useMemo(() => academicYearOptions(new Date()), []);
@@ -94,6 +99,53 @@ export default function DaySetupForm() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (rosterMode === "roster" && roster.length > 0) {
+      setStudentCount(roster.length);
+    }
+  }, [roster, rosterMode]);
+
+  const handleParseRoster = () => {
+    setRosterError(null);
+    const result = parseRosterText(pasteText);
+    if (result.errors.length > 0) {
+      setRosterError(result.errors.join("; "));
+      return;
+    }
+    if (result.rows.length === 0) {
+      setRosterError("No students found. Check the format.");
+      return;
+    }
+    setRoster(rawToRosterEntries(result.rows));
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      setPasteText(text);
+      setRosterError(null);
+      const result = parseRosterText(text);
+      if (result.errors.length > 0) {
+        setRosterError(result.errors.join("; "));
+      } else if (result.rows.length === 0) {
+        setRosterError("No students found in file.");
+      } else {
+        setRoster(rawToRosterEntries(result.rows));
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+
+  const removeRosterEntry = (index: number) => {
+    setRoster((prev) =>
+      prev.filter((_, i) => i !== index).map((entry, i) => ({ ...entry, order: i + 1 })),
+    );
+  };
 
   const updateSubject = (index: number, value: string) =>
     setSubjects((prev) => prev.map((subject, currentIndex) => (currentIndex === index ? value : subject)));
@@ -142,6 +194,7 @@ export default function DaySetupForm() {
         subjects: cleanSubjects,
         feedback_seconds: feedbackSeconds,
         feedback_mode: feedbackMode,
+        student_roster: rosterMode === "roster" && roster.length > 0 ? roster : null,
       });
       navigate("/jury");
     } catch (err) {
@@ -242,7 +295,12 @@ export default function DaySetupForm() {
                 min={1}
                 value={studentCount}
                 onChange={(e) => setStudentCount(Math.max(1, Number(e.target.value) || 1))}
+                readOnly={rosterMode === "roster" && roster.length > 0}
+                className={rosterMode === "roster" && roster.length > 0 ? "bg-slate-50" : ""}
               />
+              {rosterMode === "roster" && roster.length > 0 && (
+                <div className="mt-1 text-xs text-slate-400">Auto-set from roster ({roster.length} students)</div>
+              )}
             </Field>
             <Field label="Buffer between students (minutes)">
               <Input
@@ -278,6 +336,108 @@ export default function DaySetupForm() {
                 <p>{feedbackModeDescription(feedbackMode)}</p>
               </div>
             </Field>
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-3xl border-0 shadow-sm">
+          <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <CardTitle className="text-xl">Student Roster</CardTitle>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant={rosterMode === "manual" ? "default" : "outline"}
+                size="sm"
+                className="rounded-full"
+                onClick={() => setRosterMode("manual")}
+              >
+                Manual Entry
+              </Button>
+              <Button
+                type="button"
+                variant={rosterMode === "roster" ? "default" : "outline"}
+                size="sm"
+                className="rounded-full"
+                onClick={() => setRosterMode("roster")}
+              >
+                Upload Roster
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {rosterMode === "roster" ? (
+              <div className="space-y-4">
+                <textarea
+                  value={pasteText}
+                  onChange={(e) => setPasteText(e.target.value)}
+                  placeholder={"Paste CSV or tabular data here:\nSr. No, Enrollment No., Student Name\n1, EN001, Aavriti Sharma\n2, EN002, Rohan Patel"}
+                  className="h-32 w-full rounded-2xl border border-slate-200 bg-white p-4 font-mono text-sm focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400"
+                />
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" variant="outline" size="sm" className="rounded-full" onClick={handleParseRoster}>
+                    Parse Roster
+                  </Button>
+                  <label className="cursor-pointer">
+                    <Button type="button" variant="outline" size="sm" className="rounded-full pointer-events-none">
+                      <Upload className="mr-1 h-4 w-4" /> Upload CSV
+                    </Button>
+                    <input type="file" accept=".csv,.txt,.tsv" hidden onChange={handleFileUpload} />
+                  </label>
+                  {roster.length > 0 && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="rounded-full text-red-600 hover:bg-red-50 hover:text-red-700"
+                      onClick={() => { setRoster([]); setPasteText(""); }}
+                    >
+                      Clear Roster
+                    </Button>
+                  )}
+                </div>
+
+                {rosterError && (
+                  <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    {rosterError}
+                  </div>
+                )}
+
+                {roster.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-sm font-medium text-slate-600">{roster.length} students loaded</div>
+                    <div className="max-h-64 overflow-y-auto rounded-2xl ring-1 ring-slate-200">
+                      <table className="w-full text-sm">
+                        <thead className="sticky top-0 bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+                          <tr>
+                            <th className="px-4 py-2">#</th>
+                            <th className="px-4 py-2">Enrollment</th>
+                            <th className="px-4 py-2">Name</th>
+                            <th className="w-12 px-4 py-2"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {roster.map((entry, i) => (
+                            <tr key={i} className="border-t border-slate-100">
+                              <td className="px-4 py-2 text-slate-400">{entry.order}</td>
+                              <td className="px-4 py-2 font-mono text-xs">{entry.enrollmentNo || "—"}</td>
+                              <td className="px-4 py-2">{entry.studentName}</td>
+                              <td className="px-4 py-2">
+                                <button type="button" onClick={() => removeRosterEntry(i)} className="text-red-400 hover:text-red-600">
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-slate-500">
+                Student names will be entered one at a time during the jury.
+              </p>
+            )}
           </CardContent>
         </Card>
 

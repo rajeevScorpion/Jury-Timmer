@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
-import type { DaySetupInput, Feedback, JurySession, StudentRecord } from "@/types/session";
+import type { DaySetupInput, Feedback, JurySession, RosterEntry, StudentRecord } from "@/types/session";
 import { computePerStudentPlan, computeRemainingPlan } from "@/lib/timing";
 
 const LS_KEY = "juryTimer.activeSessionId";
@@ -33,6 +33,7 @@ type SessionValue = {
   resumeSession: (sessionId: string) => Promise<void>;
   getConsumedSeconds: () => Promise<number>;
   adjustStudentCount: (newTotal: number) => Promise<void>;
+  updateRoster: (newRoster: RosterEntry[]) => Promise<void>;
 };
 
 const SessionCtx = createContext<SessionValue | null>(null);
@@ -118,6 +119,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         feedback_seconds: input.feedback_seconds,
         feedback_mode: input.feedback_mode,
         per_subject_seconds: plan.perSubjectSeconds,
+        student_roster: input.student_roster ?? null,
         status: "active",
       };
       const { data, error } = await supabase
@@ -236,6 +238,35 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [user, activeSession, studentsCompleted, getConsumedSeconds, reload],
   );
 
+  const updateRoster = useCallback(
+    async (newRoster: RosterEntry[]) => {
+      if (!user) throw new Error("Not signed in");
+      if (!activeSession) throw new Error("No active session");
+      const newTotal = Math.max(newRoster.length, studentsCompleted + 1);
+      const consumedSecs = await getConsumedSeconds();
+      const remainingStudents = newTotal - studentsCompleted;
+      const newPlan = computeRemainingPlan({
+        totalSeconds: activeSession.total_time_seconds,
+        consumedSeconds: consumedSecs,
+        remainingStudents,
+        bufferSeconds: activeSession.buffer_seconds,
+        subjects: activeSession.subjects,
+        feedbackSeconds: activeSession.feedback_seconds,
+      });
+      const { error } = await supabase
+        .from("jury_sessions")
+        .update({
+          student_roster: newRoster,
+          number_of_students: newTotal,
+          per_subject_seconds: newPlan.perSubjectSeconds,
+        })
+        .eq("id", activeSession.id);
+      if (error) throw new Error(error.message ?? "Failed to update roster");
+      await reload();
+    },
+    [user, activeSession, studentsCompleted, getConsumedSeconds, reload],
+  );
+
   const nextStudentOrder = studentsCompleted + 1;
   const isDayComplete = activeSession
     ? studentsCompleted >= activeSession.number_of_students
@@ -257,6 +288,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         resumeSession,
         getConsumedSeconds,
         adjustStudentCount,
+        updateRoster,
       }}
     >
       {children}

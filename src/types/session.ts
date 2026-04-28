@@ -10,6 +10,13 @@ export const feedbackSchema = z.object({
 });
 export type Feedback = z.infer<typeof feedbackSchema>;
 
+export const rosterEntrySchema = z.object({
+  enrollmentNo: z.string(),
+  studentName: z.string().min(1),
+  order: z.number().int().positive(),
+});
+export type RosterEntry = z.infer<typeof rosterEntrySchema>;
+
 export const jurySessionSchema = z.object({
   id: z.string().uuid(),
   faculty_id: z.string().uuid(),
@@ -25,6 +32,7 @@ export const jurySessionSchema = z.object({
   feedback_seconds: z.number().int().nonnegative(),
   feedback_mode: feedbackModeSchema,
   per_subject_seconds: z.number().int().positive(),
+  student_roster: z.array(rosterEntrySchema).nullable().default(null),
   status: z.enum(["active", "completed"]),
   created_at: z.string(),
   completed_at: z.string().nullable(),
@@ -62,4 +70,5 @@ export type DaySetupInput = {
   subjects: string[];
   feedback_seconds: number;
   feedback_mode: FeedbackMode;
+  student_roster?: RosterEntry[] | null;
 };

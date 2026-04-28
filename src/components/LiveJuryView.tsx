@@ -27,10 +27,13 @@ import {
   Plus,
   Minus,
   Users,
+  Trash2,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 import { fmt, fmtClock, fmtHM } from "@/lib/timeFormat";
 import { beep, ensureAudio } from "@/lib/audio";
-import type { Feedback, JurySession } from "@/types/session";
+import type { Feedback, JurySession, RosterEntry } from "@/types/session";
 import {
   checkpointsFor,
   segmentIndexAt,
@@ -79,7 +82,7 @@ function errorMessage(err: unknown): string {
 
 export default function LiveJuryView({ activeSession }: { activeSession: JurySession }) {
   const navigate = useNavigate();
-  const { saveStudentRecord, completeSession, studentsCompleted, nextStudentOrder, adjustStudentCount, getConsumedSeconds } = useSession();
+  const { saveStudentRecord, completeSession, studentsCompleted, nextStudentOrder, adjustStudentCount, getConsumedSeconds, updateRoster } = useSession();
   const plan: PerStudentPlan = useMemo(() => {
     const perSubject = activeSession.per_subject_seconds;
     const segments: Segment[] = [
@@ -89,6 +92,12 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
     const totalSeconds = segments.reduce((sum, s) => sum + s.seconds, 0);
     return { perSubjectSeconds: perSubject, feedbackSeconds: activeSession.feedback_seconds, segments, totalSeconds };
   }, [activeSession]);
+
+  const roster: RosterEntry[] = useMemo(
+    () => (activeSession.student_roster as RosterEntry[]) ?? [],
+    [activeSession.student_roster],
+  );
+  const hasRoster = roster.length > 0;
 
   const TOTAL = plan.totalSeconds;
   const segments = plan.segments;
@@ -120,6 +129,13 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
   const [adjusting, setAdjusting] = useState(false);
   const [adjustError, setAdjustError] = useState<string | null>(null);
   const [consumedSeconds, setConsumedSeconds] = useState(0);
+
+  const [showRosterManage, setShowRosterManage] = useState(false);
+  const [editableRoster, setEditableRoster] = useState<RosterEntry[]>([]);
+  const [rosterSaving, setRosterSaving] = useState(false);
+  const [rosterError, setRosterError] = useState<string | null>(null);
+  const [newStudentName, setNewStudentName] = useState("");
+  const [newEnrollmentNo, setNewEnrollmentNo] = useState("");
 
   const [setupStartTime, setSetupStartTime] = useState<Date | null>(null);
   const [presentationStartTime, setPresentationStartTime] = useState<Date | null>(null);
@@ -296,8 +312,15 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
     clearFeedbackDraft(storageKey);
   };
 
-  const openNameModal = () => {
-    setNameInput("");
+  const openNameModal = (prefillName?: string) => {
+    if (prefillName !== undefined) {
+      setNameInput(prefillName);
+    } else if (hasRoster) {
+      const entry = roster.find((e) => e.order === nextStudentOrder);
+      setNameInput(entry?.studentName ?? "");
+    } else {
+      setNameInput("");
+    }
     setShowNameModal(true);
   };
 
@@ -378,17 +401,6 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
         <div className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-slate-200 sm:p-6 md:px-8 md:py-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0 max-w-3xl">
-              <div className="mb-3 flex items-center justify-end gap-1.5">
-                <div className="tabular-nums text-sm font-medium text-slate-400">{fmtClock(currentTime)}</div>
-                <button
-                  onClick={() => setSoundEnabled((value) => !value)}
-                  className={`rounded-full p-2.5 transition ${
-                    soundEnabled ? "text-slate-500 hover:bg-slate-100" : "bg-slate-200 text-slate-400"
-                  }`}
-                >
-                  <Volume2 className="h-4 w-4" />
-                </button>
-              </div>
               <h1 className="text-2xl font-bold leading-tight tracking-tight text-slate-900 md:text-4xl">
                 {studentName || appName}
               </h1>
@@ -416,12 +428,19 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                   Student {nextStudentOrder} of {activeSession.number_of_students}
                 </span>
               </div>
-              {phase !== "idle" && setupSeconds > 0 && (
-                <div className="flex items-center gap-2 rounded-full bg-amber-100 px-4 py-2 text-amber-800">
-                  <Settings className="h-4 w-4" />
-                  <span className="text-xs font-semibold">Setup {fmt(setupSeconds)}</span>
-                </div>
-              )}
+              <div className="flex items-center rounded-full bg-slate-50 px-4 py-2 ring-1 ring-slate-200">
+                <div className="tabular-nums text-sm font-medium text-slate-500">{fmtClock(currentTime)}</div>
+              </div>
+              <button
+                onClick={() => setSoundEnabled((value) => !value)}
+                className={`flex items-center justify-center rounded-full p-2.5 ring-1 transition ${
+                  soundEnabled
+                    ? "bg-slate-50 text-slate-500 ring-slate-200 hover:bg-slate-100"
+                    : "bg-slate-200 text-slate-400 ring-slate-300"
+                }`}
+              >
+                <Volume2 className="h-4 w-4" />
+              </button>
               </div>
             </div>
           </div>
@@ -462,7 +481,7 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                 <Button
                   size="lg"
                   className="w-full rounded-2xl px-6 py-4 text-lg sm:py-5"
-                  onClick={openNameModal}
+                  onClick={() => openNameModal()}
                 >
                   <Play className="mr-2 h-6 w-6" />
                   Start Prep Timer
@@ -476,6 +495,72 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                   <Users className="mr-2 h-4 w-4" />
                   Adjust Student Count
                 </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {phase === "idle" && hasRoster && (
+          <Card className="rounded-3xl border-0 shadow-sm">
+            <CardHeader className="flex flex-row items-center justify-between pb-4">
+              <CardTitle className="text-lg">Student Roster</CardTitle>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="rounded-full"
+                onClick={() => {
+                  setEditableRoster([...roster]);
+                  setRosterError(null);
+                  setNewStudentName("");
+                  setNewEnrollmentNo("");
+                  setShowRosterManage(true);
+                }}
+              >
+                <Settings className="mr-1 h-3.5 w-3.5" /> Manage
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {roster.map((entry) => {
+                  const isCompleted = entry.order <= studentsCompleted;
+                  return (
+                    <div
+                      key={entry.order}
+                      className={`flex items-center gap-3 rounded-2xl px-4 py-2.5 ring-1 ${
+                        isCompleted
+                          ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                          : "bg-white text-slate-600 ring-slate-200"
+                      }`}
+                    >
+                      <span className="w-6 text-center text-xs font-medium text-slate-400">{entry.order}</span>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-medium">{entry.studentName}</div>
+                        {entry.enrollmentNo && (
+                          <div className="truncate text-xs opacity-60">{entry.enrollmentNo}</div>
+                        )}
+                      </div>
+                      {isCompleted ? (
+                        <Badge
+                          variant="default"
+                          className="shrink-0 rounded-full bg-emerald-600 text-xs"
+                        >
+                          Done
+                        </Badge>
+                      ) : (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="shrink-0 rounded-full px-3 py-1 text-xs"
+                          onClick={() => openNameModal(entry.studentName)}
+                        >
+                          <Play className="mr-1 h-3 w-3" /> Start
+                        </Button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </CardContent>
           </Card>
@@ -872,6 +957,63 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                   )}
                 </CardContent>
               </Card>
+
+              {hasRoster && (
+                <Card className="rounded-3xl border-0 shadow-sm">
+                  <CardHeader className="flex flex-row items-center justify-between pb-4">
+                    <CardTitle className="text-lg md:text-xl">Student Roster</CardTitle>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="rounded-full"
+                      onClick={() => {
+                        setEditableRoster([...roster]);
+                        setRosterError(null);
+                        setNewStudentName("");
+                        setNewEnrollmentNo("");
+                        setShowRosterManage(true);
+                      }}
+                    >
+                      <Settings className="mr-1 h-3.5 w-3.5" /> Manage
+                    </Button>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {roster.map((entry) => {
+                      const isCompleted = entry.order <= studentsCompleted;
+                      const isCurrent = entry.order === nextStudentOrder;
+                      return (
+                        <div
+                          key={entry.order}
+                          className={`flex items-center gap-3 rounded-2xl px-4 py-2.5 ring-1 transition-all ${
+                            isCompleted
+                              ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                              : isCurrent
+                              ? "bg-blue-50 text-blue-700 ring-blue-200"
+                              : "bg-white text-slate-600 ring-slate-200"
+                          }`}
+                        >
+                          <span className="w-6 text-center text-xs font-medium">{entry.order}</span>
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-medium">{entry.studentName}</div>
+                            {entry.enrollmentNo && (
+                              <div className="truncate text-xs opacity-60">{entry.enrollmentNo}</div>
+                            )}
+                          </div>
+                          <Badge
+                            variant={isCompleted ? "default" : isCurrent ? "secondary" : "outline"}
+                            className={`shrink-0 rounded-full text-xs ${
+                              isCompleted ? "bg-emerald-600" : ""
+                            }`}
+                          >
+                            {isCompleted ? "Done" : isCurrent ? "Current" : "Pending"}
+                          </Badge>
+                        </div>
+                      );
+                    })}
+                  </CardContent>
+                </Card>
+              )}
             </div>
           </div>
         )}
@@ -905,7 +1047,11 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
         >
           <DialogHeader>
             <DialogTitle>Student Name</DialogTitle>
-            <DialogDescription>Enter the student&apos;s name to begin setup.</DialogDescription>
+            <DialogDescription>
+              {hasRoster
+                ? `Student ${nextStudentOrder} of ${activeSession.number_of_students}. Confirm or edit the name.`
+                : "Enter the student\u2019s name to begin setup."}
+            </DialogDescription>
           </DialogHeader>
 
           <form
@@ -915,6 +1061,15 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
             }}
             className="space-y-5"
           >
+            {(() => {
+              const rosterEntry = hasRoster ? roster.find((e) => e.order === nextStudentOrder) : null;
+              return rosterEntry?.enrollmentNo ? (
+                <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600 ring-1 ring-slate-200">
+                  <span className="text-xs font-medium uppercase tracking-wider text-slate-400">Enrollment</span>
+                  <div className="mt-0.5 font-mono">{rosterEntry.enrollmentNo}</div>
+                </div>
+              ) : null;
+            })()}
             <Input
               ref={inputRef}
               type="text"
@@ -1041,6 +1196,164 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                 disabled={adjusting || !!adjustValidation || adjustedCount === activeSession.number_of_students}
               >
                 {adjusting ? "Updating..." : "Update Count"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showRosterManage} onOpenChange={setShowRosterManage}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Manage Student Roster</DialogTitle>
+            <DialogDescription>
+              Add, remove, or reorder pending students. Completed students cannot be changed.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="max-h-72 space-y-2 overflow-y-auto">
+              {editableRoster.map((entry, i) => {
+                const isCompleted = entry.order <= studentsCompleted;
+                return (
+                  <div
+                    key={i}
+                    className={`flex items-center gap-2 rounded-2xl px-3 py-2.5 ring-1 ${
+                      isCompleted
+                        ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                        : "bg-white text-slate-700 ring-slate-200"
+                    }`}
+                  >
+                    <span className="w-6 text-center text-xs font-medium text-slate-400">{entry.order}</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium">{entry.studentName}</div>
+                      {entry.enrollmentNo && (
+                        <div className="truncate text-xs text-slate-400">{entry.enrollmentNo}</div>
+                      )}
+                    </div>
+                    {isCompleted ? (
+                      <Badge variant="default" className="shrink-0 rounded-full bg-emerald-600 text-xs">Done</Badge>
+                    ) : (
+                      <div className="flex shrink-0 gap-1">
+                        <button
+                          type="button"
+                          className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 disabled:opacity-30"
+                          disabled={i <= studentsCompleted}
+                          onClick={() => {
+                            setEditableRoster((prev) => {
+                              const copy = [...prev];
+                              [copy[i - 1], copy[i]] = [copy[i], copy[i - 1]];
+                              return copy.map((e, idx) => ({ ...e, order: idx + 1 }));
+                            });
+                          }}
+                        >
+                          <ArrowUp className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 disabled:opacity-30"
+                          disabled={i >= editableRoster.length - 1}
+                          onClick={() => {
+                            setEditableRoster((prev) => {
+                              const copy = [...prev];
+                              [copy[i], copy[i + 1]] = [copy[i + 1], copy[i]];
+                              return copy.map((e, idx) => ({ ...e, order: idx + 1 }));
+                            });
+                          }}
+                        >
+                          <ArrowDown className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded p-1 text-red-400 hover:bg-red-50 hover:text-red-600"
+                          onClick={() => {
+                            setEditableRoster((prev) =>
+                              prev.filter((_, idx) => idx !== i).map((e, idx) => ({ ...e, order: idx + 1 })),
+                            );
+                          }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="rounded-2xl bg-slate-50 p-3 ring-1 ring-slate-200">
+              <div className="text-xs font-medium uppercase tracking-wider text-slate-500 mb-2">Add Student</div>
+              <div className="flex gap-2">
+                <Input
+                  value={newStudentName}
+                  onChange={(e) => setNewStudentName(e.target.value)}
+                  placeholder="Student name"
+                  className="flex-1 rounded-xl text-sm"
+                />
+                <Input
+                  value={newEnrollmentNo}
+                  onChange={(e) => setNewEnrollmentNo(e.target.value)}
+                  placeholder="Enrollment (optional)"
+                  className="w-36 rounded-xl text-sm"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="rounded-xl"
+                  disabled={!newStudentName.trim()}
+                  onClick={() => {
+                    setEditableRoster((prev) => [
+                      ...prev,
+                      {
+                        studentName: newStudentName.trim(),
+                        enrollmentNo: newEnrollmentNo.trim(),
+                        order: prev.length + 1,
+                      },
+                    ]);
+                    setNewStudentName("");
+                    setNewEnrollmentNo("");
+                  }}
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+
+            {rosterError && (
+              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {rosterError}
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1 rounded-2xl"
+                onClick={() => setShowRosterManage(false)}
+                disabled={rosterSaving}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                className="flex-1 rounded-2xl"
+                disabled={rosterSaving || editableRoster.length < studentsCompleted + 1}
+                onClick={async () => {
+                  setRosterError(null);
+                  setRosterSaving(true);
+                  try {
+                    await updateRoster(editableRoster);
+                    setShowRosterManage(false);
+                  } catch (err) {
+                    setRosterError(err instanceof Error ? err.message : "Failed to update roster");
+                  } finally {
+                    setRosterSaving(false);
+                  }
+                }}
+              >
+                {rosterSaving ? "Saving..." : "Save Roster"}
               </Button>
             </div>
           </div>

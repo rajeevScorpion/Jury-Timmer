@@ -73,3 +73,48 @@ export async function generateOverallFeedback(
     userContent
   );
 }
+
+/**
+ * Transcribe audio using OpenAI Whisper API.
+ */
+async function transcribeAudio(blob: Blob): Promise<string> {
+  if (!OPENAI_API_KEY) {
+    throw new Error("VITE_OPENAI_API_KEY is not set in environment variables.");
+  }
+
+  const formData = new FormData();
+  formData.append("file", blob, "recording.webm");
+  formData.append("model", "whisper-1");
+  formData.append("language", "en");
+
+  const response = await fetch(
+    "https://api.openai.com/v1/audio/transcriptions",
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${OPENAI_API_KEY}` },
+      body: formData,
+    }
+  );
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Whisper error (${response.status}): ${err}`);
+  }
+
+  const data = await response.json();
+  return (data.text ?? "").trim();
+}
+
+/**
+ * Transcribe audio blob via Whisper, then refine the transcript with GPT.
+ * Returns polished text ready to append to a feedback field.
+ */
+export async function transcribeAndRefine(blob: Blob): Promise<string> {
+  const raw = await transcribeAudio(blob);
+  if (!raw) throw new Error("No speech detected in recording.");
+
+  return callOpenAI(
+    "You are a helpful writing assistant for academic faculty feedback. The following text was transcribed from a voice recording. Fix any transcription errors, spelling, grammar, and punctuation issues. Improve clarity while preserving the original meaning. Keep the tone professional and constructive. Output ONLY the refined text, nothing else. Always respond in English.",
+    raw
+  );
+}

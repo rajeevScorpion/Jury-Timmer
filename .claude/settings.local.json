@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__supabase__deploy_edge_function",
+      "Bash(npm run build:*)",
+      "Bash(supabase projects:*)",
+      "Bash(supabase link:*)",
+      "Bash(supabase functions deploy:*)",
+      "mcp__supabase__get_logs",
+      "Bash(supabase functions list:*)",
+      "Bash(supabase secrets:*)",
+      "Bash(npx tsc:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "mcp__supabase__apply_migration"
+    ]
+  }
+}
