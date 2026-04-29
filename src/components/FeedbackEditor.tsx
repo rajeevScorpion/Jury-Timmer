@@ -3,7 +3,7 @@ import { ChevronDown, ChevronUp, Loader2, Sparkles, Undo2 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { Feedback } from "@/types/session";
-import AiImproveButton from "@/components/AiImproveButton";
+import FeedbackToolbar from "@/components/FeedbackToolbar";
 import { generateOverallFeedback } from "@/lib/ai-feedback";
 
 type Props = {
@@ -27,6 +27,7 @@ export default function FeedbackEditor({
 }: Props) {
   const [expandedSubject, setExpandedSubject] = useState<string | null>(null);
   const subjectRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
+  const overallRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Generate-overall state
   const [generatingOverall, setGeneratingOverall] = useState(false);
@@ -122,6 +123,7 @@ export default function FeedbackEditor({
         </label>
         <div className="relative mt-3">
           <Textarea
+            ref={overallRef}
             value={feedback.final}
             onChange={(e) => updateFinal(e.target.value)}
             placeholder="Overall feedback for the student..."
@@ -130,9 +132,13 @@ export default function FeedbackEditor({
             className="min-h-[132px] bg-white pr-10 pb-8 leading-relaxed"
           />
           <div className="absolute bottom-2 right-2">
-            <AiImproveButton
+            <FeedbackToolbar
               text={feedback.final}
               onImproved={updateFinal}
+              textareaRef={overallRef}
+              currentSubject={null}
+              subjects={subjects}
+              onTextChange={updateFinal}
             />
           </div>
         </div>
@@ -242,11 +248,15 @@ export default function FeedbackEditor({
                         className="min-h-[120px] pb-8 leading-relaxed"
                       />
                       <div className="absolute bottom-2 right-2">
-                        <AiImproveButton
+                        <FeedbackToolbar
                           text={note}
                           onImproved={(improved) =>
                             updateSubject(subject, improved)
                           }
+                          textareaRef={{ current: subjectRefs.current[subject] ?? null }}
+                          currentSubject={subject}
+                          subjects={subjects}
+                          onTextChange={(t) => updateSubject(subject, t)}
                         />
                       </div>
                     </div>
