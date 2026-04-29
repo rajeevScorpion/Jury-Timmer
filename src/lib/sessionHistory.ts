@@ -44,6 +44,20 @@ export async function markSessionCompleted(sessionId: string): Promise<string> {
   return completedAt;
 }
 
+export async function deleteSession(sessionId: string): Promise<void> {
+  const { error: recErr } = await supabase
+    .from("student_records")
+    .delete()
+    .eq("session_id", sessionId);
+  if (recErr) throw new Error(recErr.message || "Failed to delete student records.");
+
+  const { error: sessErr } = await supabase
+    .from("jury_sessions")
+    .delete()
+    .eq("id", sessionId);
+  if (sessErr) throw new Error(sessErr.message || "Failed to delete session.");
+}
+
 export function sessionStatusLabel(status: JurySession["status"]): string {
   return status === "active" ? "In Progress" : "Completed";
 }

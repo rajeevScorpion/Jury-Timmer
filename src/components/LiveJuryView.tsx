@@ -82,7 +82,7 @@ function errorMessage(err: unknown): string {
 
 export default function LiveJuryView({ activeSession }: { activeSession: JurySession }) {
   const navigate = useNavigate();
-  const { saveStudentRecord, completeSession, studentsCompleted, nextStudentOrder, adjustStudentCount, getConsumedSeconds, updateRoster } = useSession();
+  const { saveStudentRecord, completeSession, studentsCompleted, nextStudentOrder, completedOrders, adjustStudentCount, getConsumedSeconds, updateRoster } = useSession();
   const plan: PerStudentPlan = useMemo(() => {
     const perSubject = activeSession.per_subject_seconds;
     const segments: Segment[] = [
@@ -104,9 +104,12 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
   const checkpoints = useMemo(() => checkpointsFor(segments), [segments]);
   const feedbackMode = normalizeFeedbackMode(activeSession.feedback_mode, LEGACY_FEEDBACK_MODE);
   const isSynchronousFeedback = feedbackMode === "synchronous";
+  const [currentStudentOrder, setCurrentStudentOrder] = useState<number | null>(null);
+
+  const activeDraftOrder = currentStudentOrder ?? nextStudentOrder;
   const draftStorageId = useMemo(
-    () => feedbackDraftStorageKey(activeSession.id, nextStudentOrder),
-    [activeSession.id, nextStudentOrder],
+    () => feedbackDraftStorageKey(activeSession.id, activeDraftOrder),
+    [activeSession.id, activeDraftOrder],
   );
 
   const [phase, setPhase] = useState<Phase>("idle");
@@ -310,15 +313,19 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
     setShowFeedbackDialog(false);
     lastCue.current = -1;
     clearFeedbackDraft(storageKey);
+    setCurrentStudentOrder(null);
   };
 
-  const openNameModal = (prefillName?: string) => {
-    if (prefillName !== undefined) {
-      setNameInput(prefillName);
+  const openNameModal = (prefillName?: string, order?: number) => {
+    if (order !== undefined) {
+      setCurrentStudentOrder(order);
+      setNameInput(prefillName ?? "");
     } else if (hasRoster) {
-      const entry = roster.find((e) => e.order === nextStudentOrder);
-      setNameInput(entry?.studentName ?? "");
+      const nextEntry = roster.find((e) => !completedOrders.has(e.order));
+      setCurrentStudentOrder(nextEntry?.order ?? null);
+      setNameInput(nextEntry?.studentName ?? "");
     } else {
+      setCurrentStudentOrder(null);
       setNameInput("");
     }
     setShowNameModal(true);
@@ -362,6 +369,7 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
       setFeedbackError(null);
 
       await saveStudentRecord({
+        student_order: currentStudentOrder ?? undefined,
         student_name: studentName,
         setup_seconds: setupSeconds,
         presentation_seconds: Math.min(elapsed, TOTAL),
@@ -425,7 +433,7 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
               <div className="flex flex-wrap items-center gap-2.5 sm:justify-end">
               <div className="flex items-center gap-2 rounded-full bg-slate-100 px-4 py-2 text-slate-700">
                 <span className="text-xs font-semibold uppercase tracking-widest">
-                  Student {nextStudentOrder} of {activeSession.number_of_students}
+                  Student {currentStudentOrder ?? nextStudentOrder} of {activeSession.number_of_students}
                 </span>
               </div>
               <div className="flex items-center rounded-full bg-slate-50 px-4 py-2 ring-1 ring-slate-200">
@@ -523,7 +531,7 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
             <CardContent>
               <div className="grid gap-2 sm:grid-cols-2">
                 {roster.map((entry) => {
-                  const isCompleted = entry.order <= studentsCompleted;
+                  const isCompleted = completedOrders.has(entry.order);
                   return (
                     <div
                       key={entry.order}
@@ -553,7 +561,7 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                           size="sm"
                           variant="outline"
                           className="shrink-0 rounded-full px-3 py-1 text-xs"
-                          onClick={() => openNameModal(entry.studentName)}
+                          onClick={() => openNameModal(entry.studentName, entry.order)}
                         >
                           <Play className="mr-1 h-3 w-3" /> Start
                         </Button>
@@ -980,8 +988,8 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                   </CardHeader>
                   <CardContent className="space-y-2">
                     {roster.map((entry) => {
-                      const isCompleted = entry.order <= studentsCompleted;
-                      const isCurrent = entry.order === nextStudentOrder;
+                      const isCompleted = completedOrders.has(entry.order);
+                      const isCurrent = entry.order === currentStudentOrder;
                       return (
                         <div
                           key={entry.order}
@@ -989,7 +997,7 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                             isCompleted
                               ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
                               : isCurrent
-                              ? "bg-blue-50 text-blue-700 ring-blue-200"
+                              ? "bg-blue-100 text-blue-800 ring-2 ring-blue-400 shadow-md"
                               : "bg-white text-slate-600 ring-slate-200"
                           }`}
                         >
@@ -1001,9 +1009,9 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                             )}
                           </div>
                           <Badge
-                            variant={isCompleted ? "default" : isCurrent ? "secondary" : "outline"}
+                            variant={isCompleted ? "default" : isCurrent ? "default" : "outline"}
                             className={`shrink-0 rounded-full text-xs ${
-                              isCompleted ? "bg-emerald-600" : ""
+                              isCompleted ? "bg-emerald-600" : isCurrent ? "bg-blue-600 text-white" : ""
                             }`}
                           >
                             {isCompleted ? "Done" : isCurrent ? "Current" : "Pending"}
@@ -1049,7 +1057,7 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
             <DialogTitle>Student Name</DialogTitle>
             <DialogDescription>
               {hasRoster
-                ? `Student ${nextStudentOrder} of ${activeSession.number_of_students}. Confirm or edit the name.`
+                ? `Student ${currentStudentOrder ?? nextStudentOrder} of ${activeSession.number_of_students}. Confirm or edit the name.`
                 : "Enter the student\u2019s name to begin setup."}
             </DialogDescription>
           </DialogHeader>
@@ -1062,7 +1070,7 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
             className="space-y-5"
           >
             {(() => {
-              const rosterEntry = hasRoster ? roster.find((e) => e.order === nextStudentOrder) : null;
+              const rosterEntry = hasRoster ? roster.find((e) => e.order === (currentStudentOrder ?? nextStudentOrder)) : null;
               return rosterEntry?.enrollmentNo ? (
                 <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600 ring-1 ring-slate-200">
                   <span className="text-xs font-medium uppercase tracking-wider text-slate-400">Enrollment</span>
@@ -1214,7 +1222,7 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
           <div className="space-y-4">
             <div className="max-h-72 space-y-2 overflow-y-auto">
               {editableRoster.map((entry, i) => {
-                const isCompleted = entry.order <= studentsCompleted;
+                const isCompleted = completedOrders.has(entry.order);
                 return (
                   <div
                     key={i}
@@ -1238,7 +1246,7 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                         <button
                           type="button"
                           className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 disabled:opacity-30"
-                          disabled={i <= studentsCompleted}
+                          disabled={i === 0 || completedOrders.has(editableRoster[i - 1]?.order)}
                           onClick={() => {
                             setEditableRoster((prev) => {
                               const copy = [...prev];

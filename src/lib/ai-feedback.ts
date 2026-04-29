@@ -37,11 +37,21 @@ async function callOpenAI(
 
 /**
  * Improve a single feedback field: fix spelling, grammar, articulate better.
- * Returns the improved text (50-100 words).
+ * Returns the improved text (max 100 words).
  */
 export async function improveFeedback(text: string): Promise<string> {
   return callOpenAI(
-    "You are a helpful writing assistant for academic faculty feedback. Fix spelling, grammar, and punctuation errors. Improve articulation and clarity while preserving the original meaning and intent. Keep the tone professional and constructive. Output ONLY the improved text, nothing else. Keep it concise: 50 to 100 words. Always respond in English.",
+    `You are a writing assistant for academic jury feedback.
+
+Rules:
+- Fix spelling, grammar, and punctuation errors.
+- Improve articulation and clarity while preserving the original meaning.
+- Use a constructive, positive, and professional tone.
+- Be direct and to the point. NEVER start with filler phrases like "I would like to provide feedback", "The student has", "Overall, the student" or similar preambles. Jump straight into the substantive observation.
+- Strip any conversational or customary pleasantries that add no meaning (e.g. "my feedback is", "I would like to say", "thank you for presenting").
+- STRICT LIMIT: maximum 100 words. Be concise.
+- Output ONLY the improved text, nothing else.
+- Always respond in English.`,
     text
   );
 }
@@ -69,7 +79,18 @@ export async function generateOverallFeedback(
     .join("\n");
 
   return callOpenAI(
-    "You are a helpful writing assistant for academic faculty feedback. Synthesize the provided per-subject feedback notes into a cohesive overall summary. Fix any spelling or grammar issues. Use a professional, constructive academic tone. Output ONLY the summary text, nothing else. Keep it between 100 to 150 words. Always respond in English.",
+    `You are a writing assistant for academic jury feedback.
+
+Rules:
+- Synthesize the provided per-subject feedback notes into a cohesive overall summary.
+- Fix any spelling or grammar issues.
+- Use a constructive, positive, and professional tone.
+- Be direct and to the point. NEVER start with filler phrases like "I would like to provide feedback", "The student has demonstrated", "Overall, the student" or similar preambles. Jump straight into the substantive observations.
+- Strip any conversational or customary pleasantries that add no meaning.
+- Highlight both strengths and areas for improvement in a balanced, encouraging way.
+- STRICT LIMIT: maximum 150 words. Be concise.
+- Output ONLY the summary text, nothing else.
+- Always respond in English.`,
     userContent
   );
 }
@@ -114,7 +135,17 @@ export async function transcribeAndRefine(blob: Blob): Promise<string> {
   if (!raw) throw new Error("No speech detected in recording.");
 
   return callOpenAI(
-    "You are a helpful writing assistant for academic faculty feedback. The following text was transcribed from a voice recording. Fix any transcription errors, spelling, grammar, and punctuation issues. Improve clarity while preserving the original meaning. Keep the tone professional and constructive. Output ONLY the refined text, nothing else. Always respond in English.",
+    `You are a writing assistant for academic jury feedback. The following text was transcribed from a voice recording.
+
+Rules:
+- Fix any transcription errors, spelling, grammar, and punctuation issues.
+- Improve clarity while preserving the original meaning.
+- Use a constructive, positive, and professional tone.
+- IMPORTANT: Strip all conversational filler and customary speech patterns from the voice input. Remove phrases like "my feedback is", "I would like to say", "so basically", "thank you for presenting", "um", "you know", etc. Extract ONLY the meaningful, substantive feedback content.
+- Be direct and to the point. Do not start with preambles.
+- STRICT LIMIT: maximum 100 words. Be concise.
+- Output ONLY the refined text, nothing else.
+- Always respond in English.`,
     raw
   );
 }

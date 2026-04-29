@@ -7,6 +7,7 @@ import { computePerStudentPlan, computeRemainingPlan } from "@/lib/timing";
 const LS_KEY = "juryTimer.activeSessionId";
 
 export type StudentRecordInput = {
+  student_order?: number;
   student_name: string;
   setup_seconds: number;
   presentation_seconds: number;
@@ -34,6 +35,7 @@ type SessionValue = {
   getConsumedSeconds: () => Promise<number>;
   adjustStudentCount: (newTotal: number) => Promise<void>;
   updateRoster: (newRoster: RosterEntry[]) => Promise<void>;
+  completedOrders: Set<number>;
 };
 
 const SessionCtx = createContext<SessionValue | null>(null);
@@ -42,6 +44,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [activeSession, setActiveSession] = useState<JurySession | null>(null);
   const [studentsCompleted, setStudentsCompleted] = useState(0);
+  const [completedOrders, setCompletedOrders] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
 
   const loadById = useCallback(async (id: string) => {
@@ -57,18 +60,20 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return data as JurySession;
   }, []);
 
-  const loadStudentCount = useCallback(async (sessionId: string) => {
-    const { count } = await supabase
+  const loadCompletedOrders = useCallback(async (sessionId: string): Promise<Set<number>> => {
+    const { data, error } = await supabase
       .from("student_records")
-      .select("*", { count: "exact", head: true })
+      .select("student_order")
       .eq("session_id", sessionId);
-    return count ?? 0;
+    if (error || !data) return new Set();
+    return new Set(data.map((r) => r.student_order));
   }, []);
 
   const reload = useCallback(async () => {
     if (!user) {
       setActiveSession(null);
       setStudentsCompleted(0);
+      setCompletedOrders(new Set());
       setLoading(false);
       return;
     }
@@ -76,6 +81,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     if (!id) {
       setActiveSession(null);
       setStudentsCompleted(0);
+      setCompletedOrders(new Set());
       setLoading(false);
       return;
     }
@@ -83,13 +89,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     if (!s || s.status !== "active") {
       setActiveSession(null);
       setStudentsCompleted(0);
+      setCompletedOrders(new Set());
       localStorage.removeItem(LS_KEY);
     } else {
       setActiveSession(s);
-      setStudentsCompleted(await loadStudentCount(s.id));
+      const orders = await loadCompletedOrders(s.id);
+      setCompletedOrders(orders);
+      setStudentsCompleted(orders.size);
     }
     setLoading(false);
-  }, [user, loadById, loadStudentCount]);
+  }, [user, loadById, loadCompletedOrders]);
 
   useEffect(() => {
     void reload();
@@ -132,6 +141,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       localStorage.setItem(LS_KEY, session.id);
       setActiveSession(session);
       setStudentsCompleted(0);
+      setCompletedOrders(new Set());
       return session;
     },
     [user],
@@ -141,6 +151,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem(LS_KEY);
     setActiveSession(null);
     setStudentsCompleted(0);
+    setCompletedOrders(new Set());
   }, []);
 
   const resumeSession = useCallback(
@@ -149,9 +160,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       if (!s || s.status !== "active") throw new Error("Session is no longer active.");
       localStorage.setItem(LS_KEY, sessionId);
       setActiveSession(s);
-      setStudentsCompleted(await loadStudentCount(s.id));
+      const orders = await loadCompletedOrders(s.id);
+      setCompletedOrders(orders);
+      setStudentsCompleted(orders.size);
     },
-    [loadById, loadStudentCount],
+    [loadById, loadCompletedOrders],
   );
 
   const completeSession = useCallback(async () => {
@@ -167,7 +180,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     async (input: StudentRecordInput): Promise<StudentRecord> => {
       if (!user) throw new Error("Not signed in");
       if (!activeSession) throw new Error("No active session");
-      const order = studentsCompleted + 1;
+      const order = input.student_order ?? (studentsCompleted + 1);
       const { data, error } = await supabase
         .from("student_records")
         .insert({
@@ -188,7 +201,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         .select("*")
         .single();
       if (error || !data) throw new Error(error?.message ?? "Failed to save record");
-      setStudentsCompleted(order);
+      setCompletedOrders((prev) => new Set(prev).add(order));
+      setStudentsCompleted((prev) => prev + 1);
       return data as StudentRecord;
     },
     [user, activeSession, studentsCompleted],
@@ -289,6 +303,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         getConsumedSeconds,
         adjustStudentCount,
         updateRoster,
+        completedOrders,
       }}
     >
       {children}

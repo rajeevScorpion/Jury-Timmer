@@ -12,6 +12,7 @@ import {
   Minus,
   Play,
   Plus,
+  Trash2,
   Users,
 } from "lucide-react";
 import SessionStudentRow from "@/components/SessionStudentRow";
@@ -33,6 +34,7 @@ import { supabase } from "@/lib/supabase";
 import { fmtHM } from "@/lib/timeFormat";
 import { computeRemainingPlan, validateStudentCountChange } from "@/lib/timing";
 import {
+  deleteSession,
   fetchHistorySessions,
   fetchSessionRecords,
   historyTimestampLabel,
@@ -51,6 +53,9 @@ export default function ReportHistoryView() {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [actionError, setActionError] = useState<string | null>(null);
   const [closingSessionId, setClosingSessionId] = useState<string | null>(null);
+
+  const [deleteTarget, setDeleteTarget] = useState<JurySession | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const [adjustSession, setAdjustSession] = useState<JurySession | null>(null);
   const [adjustedCount, setAdjustedCount] = useState(0);
@@ -212,6 +217,29 @@ export default function ReportHistoryView() {
     }
   };
 
+  const handleDeleteSession = useCallback(async () => {
+    if (!deleteTarget) return;
+    try {
+      setDeleting(true);
+      setActionError(null);
+      await deleteSession(deleteTarget.id);
+      setSessions((prev) => prev.filter((s) => s.id !== deleteTarget.id));
+      setRecordsBySession((prev) => {
+        const next = { ...prev };
+        delete next[deleteTarget.id];
+        return next;
+      });
+      if (activeSession?.id === deleteTarget.id) {
+        await reload();
+      }
+      setDeleteTarget(null);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Failed to delete session.");
+    } finally {
+      setDeleting(false);
+    }
+  }, [deleteTarget, activeSession, reload]);
+
   const inProgressSessions = sessions.filter((session) => session.status === "active");
   const completedSessions = sessions.filter((session) => session.status === "completed");
 
@@ -317,6 +345,15 @@ export default function ReportHistoryView() {
                       Students
                       {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                     </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full justify-center rounded-full text-red-600 hover:bg-red-50 hover:text-red-700 sm:w-auto"
+                      onClick={() => setDeleteTarget(session)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Delete
+                    </Button>
                   </div>
                 </div>
 
@@ -363,18 +400,32 @@ export default function ReportHistoryView() {
               <SessionSummary session={session} />
 
               <div className="mt-4 flex flex-col gap-2 border-t border-slate-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full justify-center rounded-full sm:w-auto"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    void downloadSessionCsvFor(session);
-                  }}
-                >
-                  <Download className="h-4 w-4" />
-                  CSV
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full justify-center rounded-full sm:w-auto"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void downloadSessionCsvFor(session);
+                    }}
+                  >
+                    <Download className="h-4 w-4" />
+                    CSV
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full justify-center rounded-full text-red-600 hover:bg-red-50 hover:text-red-700 sm:w-auto"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setDeleteTarget(session);
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete
+                  </Button>
+                </div>
 
                 <div className="inline-flex items-center justify-center gap-1.5 rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white sm:self-auto">
                   Open
@@ -385,6 +436,51 @@ export default function ReportHistoryView() {
           </Card>
         ))}
       </HistorySection>
+
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open && !deleting) setDeleteTarget(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete Session</DialogTitle>
+            <DialogDescription>
+              This will permanently delete this jury session and all its student records. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+
+          {deleteTarget && (
+            <div className="space-y-4">
+              <div className="rounded-2xl bg-red-50 p-4 text-sm ring-1 ring-red-200">
+                <p className="font-semibold text-red-800">{deleteTarget.department}</p>
+                <p className="mt-1 text-red-700">
+                  {deleteTarget.jury_type} &middot; {deleteTarget.section} / Sem {deleteTarget.semester} / {deleteTarget.academic_year}
+                </p>
+                <p className="mt-1 text-red-700">
+                  {deleteTarget.number_of_students} student{deleteTarget.number_of_students !== 1 ? "s" : ""} planned
+                </p>
+              </div>
+
+              <div className="flex gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1 rounded-2xl"
+                  onClick={() => setDeleteTarget(null)}
+                  disabled={deleting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="flex-1 rounded-2xl bg-red-600 text-white hover:bg-red-700"
+                  onClick={() => void handleDeleteSession()}
+                  disabled={deleting}
+                >
+                  {deleting ? "Deleting..." : "Delete"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!adjustSession} onOpenChange={(open) => { if (!open) setAdjustSession(null); }}>
         <DialogContent className="max-w-md">
