@@ -1,6 +1,41 @@
 const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY as string;
 const OPENAI_MODEL = "gpt-4o-mini";
 
+async function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function friendlyApiError(status: number, body: string): string {
+  if (status === 429) return "AI service is busy. Please try again in a moment.";
+  if (status === 401 || status === 403) return "AI API key is invalid or expired.";
+  if (status >= 500) return "AI service is temporarily unavailable. Please retry.";
+  try {
+    const parsed = JSON.parse(body);
+    return parsed?.error?.message || `AI error (${status})`;
+  } catch {
+    return `AI error (${status})`;
+  }
+}
+
+async function fetchWithRetry(
+  url: string,
+  init: RequestInit,
+  retries = 2
+): Promise<Response> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const response = await fetch(url, init);
+    if (response.ok) return response;
+    // Retry on 429 (rate limit) and 5xx (server errors)
+    if ((response.status === 429 || response.status >= 500) && attempt < retries) {
+      await sleep(1000 * (attempt + 1));
+      continue;
+    }
+    const err = await response.text();
+    throw new Error(friendlyApiError(response.status, err));
+  }
+  throw new Error("AI service is unavailable. Please try again.");
+}
+
 async function callOpenAI(
   systemPrompt: string,
   userContent: string
@@ -9,27 +44,25 @@ async function callOpenAI(
     throw new Error("VITE_OPENAI_API_KEY is not set in environment variables.");
   }
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: OPENAI_MODEL,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userContent },
-      ],
-      temperature: 0.4,
-      max_tokens: 300,
-    }),
-  });
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`OpenAI error (${response.status}): ${err}`);
-  }
+  const response = await fetchWithRetry(
+    "https://api.openai.com/v1/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: OPENAI_MODEL,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userContent },
+        ],
+        temperature: 0.4,
+        max_tokens: 300,
+      }),
+    }
+  );
 
   const data = await response.json();
   return data.choices[0].message.content.trim();
@@ -108,7 +141,7 @@ async function transcribeAudio(blob: Blob): Promise<string> {
   formData.append("model", "whisper-1");
   formData.append("language", "en");
 
-  const response = await fetch(
+  const response = await fetchWithRetry(
     "https://api.openai.com/v1/audio/transcriptions",
     {
       method: "POST",
@@ -116,11 +149,6 @@ async function transcribeAudio(blob: Blob): Promise<string> {
       body: formData,
     }
   );
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`Whisper error (${response.status}): ${err}`);
-  }
 
   const data = await response.json();
   return (data.text ?? "").trim();
