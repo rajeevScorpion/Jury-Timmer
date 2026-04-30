@@ -36,6 +36,19 @@ export const jurySessionSchema = z.object({
   status: z.enum(["active", "completed"]),
   created_at: z.string(),
   completed_at: z.string().nullable(),
+  // Live timer state (persisted for refresh/cross-device resume)
+  current_student_order: z.number().int().nullable().default(null),
+  current_student_name: z.string().nullable().default(null),
+  current_phase: z.enum(["idle", "setup", "presenting", "paused", "finished"]).default("idle"),
+  phase_setup_started_at: z.string().nullable().default(null),
+  phase_presentation_started_at: z.string().nullable().default(null),
+  phase_paused_at: z.string().nullable().default(null),
+  phase_total_paused_ms: z.number().int().default(0),
+  phase_elapsed_at_finish: z.number().int().nullable().default(null),
+  phase_setup_elapsed_at_transition: z.number().int().nullable().default(null),
+  current_feedback_draft: feedbackSchema.nullable().default(null),
+  active_device_id: z.string().nullable().default(null),
+  device_heartbeat_at: z.string().nullable().default(null),
 });
 export type JurySession = z.infer<typeof jurySessionSchema>;
 

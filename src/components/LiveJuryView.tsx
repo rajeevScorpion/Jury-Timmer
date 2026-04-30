@@ -30,10 +30,13 @@ import {
   Trash2,
   ArrowUp,
   ArrowDown,
+  Monitor,
+  WifiOff,
 } from "lucide-react";
 import { fmt, fmtClock, fmtHM } from "@/lib/timeFormat";
 import { beep, ensureAudio } from "@/lib/audio";
 import type { Feedback, JurySession, RosterEntry } from "@/types/session";
+import { computeSnapshot, checkDeviceLock, sendHeartbeat, type DeviceLockStatus } from "@/lib/timerSync";
 import {
   checkpointsFor,
   segmentIndexAt,
@@ -82,7 +85,7 @@ function errorMessage(err: unknown): string {
 
 export default function LiveJuryView({ activeSession }: { activeSession: JurySession }) {
   const navigate = useNavigate();
-  const { saveStudentRecord, completeSession, studentsCompleted, nextStudentOrder, completedOrders, adjustStudentCount, getConsumedSeconds, updateRoster } = useSession();
+  const { saveStudentRecord, completeSession, studentsCompleted, nextStudentOrder, completedOrders, adjustStudentCount, getConsumedSeconds, updateRoster, persistPhaseTransition, saveFeedbackDraftToServer, clearLiveTimerState } = useSession();
   const plan: PerStudentPlan = useMemo(() => {
     const perSubject = activeSession.per_subject_seconds;
     const segments: Segment[] = [
@@ -145,11 +148,29 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
   const [endTime, setEndTime] = useState<Date | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
 
+  // Timestamp-based timer state (for server sync)
+  const [clockOffset, setClockOffset] = useState(0); // ms: serverTime - clientTime
+  const [setupStartedAtMs, setSetupStartedAtMs] = useState<number | null>(null);
+  const [presentationStartedAtMs, setPresentationStartedAtMs] = useState<number | null>(null);
+  const [totalPausedSeconds, setTotalPausedSeconds] = useState(0);
+  const [pauseStartTime, setPauseStartTime] = useState<number | null>(null);
+
+  // Device lock
+  const [showDeviceLock, setShowDeviceLock] = useState(false);
+  const [deviceLockInfo, setDeviceLockInfo] = useState<DeviceLockStatus | null>(null);
+  const [takingOver, setTakingOver] = useState(false);
+
+  // Sync status
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [restoringState, setRestoringState] = useState(false);
+
   const tick = useRef<number | null>(null);
   const audioCtx = useRef<AudioContext | null>(null);
   const lastCue = useRef(-1);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const pageRef = useRef<HTMLDivElement | null>(null);
+  const debouncedSaveDraft = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasRestored = useRef(false);
   const isActive = phase === "presenting" || phase === "paused" || phase === "finished";
 
   const isOvertime = elapsed > TOTAL;
@@ -174,10 +195,99 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
     return () => clearInterval(id);
   }, []);
 
+  // --- Restore state from server on mount ---
   useEffect(() => {
-    if (phase === "setup") {
+    if (hasRestored.current) return;
+    const serverPhase = activeSession.current_phase;
+    if (!serverPhase || serverPhase === "idle") return;
+    hasRestored.current = true;
+
+    const lockStatus = checkDeviceLock(activeSession);
+    if (lockStatus.locked && !lockStatus.stale) {
+      setDeviceLockInfo(lockStatus);
+      setShowDeviceLock(true);
+      return;
+    }
+
+    restoreFromServer();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSession.id]);
+
+  const restoreFromServer = useCallback(() => {
+    setRestoringState(true);
+    try {
+      // Use current time as approximate server_now (heartbeat will correct drift)
+      const serverNow = new Date(Date.now() + clockOffset);
+      const snapshot = computeSnapshot(activeSession, serverNow);
+
+      setPhase(snapshot.phase);
+      setStudentName(snapshot.studentName);
+      setSetupSeconds(snapshot.setupSeconds);
+      setElapsed(snapshot.elapsed);
+      if (snapshot.studentOrder != null) {
+        setCurrentStudentOrder(snapshot.studentOrder);
+      }
+
+      // Restore feedback draft: prefer server, fallback to localStorage
+      if (snapshot.feedbackDraft && hasDraftContent(snapshot.feedbackDraft)) {
+        setFeedbackDraft(snapshot.feedbackDraft);
+      }
+
+      // Restore timestamp references for tick interval
+      if (activeSession.phase_setup_started_at) {
+        const ms = new Date(activeSession.phase_setup_started_at).getTime();
+        setSetupStartedAtMs(ms);
+        setSetupStartTime(new Date(activeSession.phase_setup_started_at));
+      }
+      if (activeSession.phase_presentation_started_at) {
+        const ms = new Date(activeSession.phase_presentation_started_at).getTime();
+        setPresentationStartedAtMs(ms);
+        setPresentationStartTime(new Date(activeSession.phase_presentation_started_at));
+      }
+      if (activeSession.phase_paused_at && snapshot.phase === "paused") {
+        setPauseStartTime(new Date(activeSession.phase_paused_at).getTime());
+      }
+      setTotalPausedSeconds(Math.floor((activeSession.phase_total_paused_ms ?? 0) / 1000));
+
+      // Claim device lock via heartbeat
+      sendHeartbeat(activeSession.id).catch(() => {});
+    } finally {
+      setRestoringState(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSession, clockOffset]);
+
+  const handleTakeOver = useCallback(async () => {
+    setTakingOver(true);
+    try {
+      await sendHeartbeat(activeSession.id);
+      setShowDeviceLock(false);
+      restoreFromServer();
+    } catch {
+      setSyncError("Failed to take over session. Please try again.");
+    } finally {
+      setTakingOver(false);
+    }
+  }, [activeSession.id, restoreFromServer]);
+
+  // --- Tick interval (timestamp-derived) ---
+  useEffect(() => {
+    if (phase === "setup" && setupStartedAtMs) {
+      tick.current = window.setInterval(() => {
+        const adjustedNow = Date.now() + clockOffset;
+        setSetupSeconds(Math.max(0, Math.floor((adjustedNow - setupStartedAtMs) / 1000)));
+      }, 1000);
+    } else if (phase === "setup" && !setupStartedAtMs) {
+      // Fallback for before server response (local increment)
       tick.current = window.setInterval(() => setSetupSeconds((previous) => previous + 1), 1000);
-    } else if (phase === "presenting") {
+    } else if (phase === "presenting" && presentationStartedAtMs) {
+      tick.current = window.setInterval(() => {
+        const adjustedNow = Date.now() + clockOffset;
+        const totalMs = adjustedNow - presentationStartedAtMs;
+        setElapsed(Math.max(0, Math.floor(totalMs / 1000) - totalPausedSeconds));
+      }, 1000);
+    } else if (phase === "presenting" && !presentationStartedAtMs) {
+      // Fallback for before server response
       tick.current = window.setInterval(() => setElapsed((previous) => previous + 1), 1000);
     }
 
@@ -187,7 +297,7 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
         tick.current = null;
       }
     };
-  }, [phase]);
+  }, [phase, setupStartedAtMs, presentationStartedAtMs, totalPausedSeconds, clockOffset]);
 
   useEffect(() => {
     if (phase !== "presenting") return;
@@ -220,13 +330,36 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
     try {
       if (!hasDraftContent(feedbackDraft)) {
         localStorage.removeItem(draftStorageId);
-        return;
+      } else {
+        localStorage.setItem(draftStorageId, JSON.stringify(feedbackDraft));
       }
-      localStorage.setItem(draftStorageId, JSON.stringify(feedbackDraft));
     } catch {
       // Ignore local storage failures so the timer keeps running.
     }
-  }, [draftStorageId, feedbackDraft]);
+
+    // Debounced server save (2 second delay)
+    if (debouncedSaveDraft.current) clearTimeout(debouncedSaveDraft.current);
+    if (hasDraftContent(feedbackDraft)) {
+      debouncedSaveDraft.current = setTimeout(() => {
+        saveFeedbackDraftToServer(feedbackDraft).catch(() => {});
+      }, 2000);
+    }
+
+    return () => {
+      if (debouncedSaveDraft.current) clearTimeout(debouncedSaveDraft.current);
+    };
+  }, [draftStorageId, feedbackDraft, saveFeedbackDraftToServer]);
+
+  // Flush feedback draft on tab hide/close
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden" && hasDraftContent(feedbackDraft)) {
+        saveFeedbackDraftToServer(feedbackDraft).catch(() => {});
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [feedbackDraft, saveFeedbackDraftToServer]);
 
   useEffect(() => {
     if (!isActive && showTimerHelp) {
@@ -314,6 +447,14 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
     lastCue.current = -1;
     clearFeedbackDraft(storageKey);
     setCurrentStudentOrder(null);
+    // Reset timestamp tracking
+    setSetupStartedAtMs(null);
+    setPresentationStartedAtMs(null);
+    setTotalPausedSeconds(0);
+    setPauseStartTime(null);
+    setSyncError(null);
+    // Clear server live state (fire-and-forget)
+    clearLiveTimerState().catch(() => {});
   };
 
   const openNameModal = (prefillName?: string, order?: number) => {
@@ -333,26 +474,97 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
 
   const submitName = async () => {
     if (!nameInput.trim()) return;
-    setStudentName(nameInput.trim());
+    const name = nameInput.trim();
     setShowNameModal(false);
     await ensureAudio(audioCtx);
-    setSetupStartTime(new Date());
-    setPhase("setup");
+
+    try {
+      setSyncError(null);
+      const order = currentStudentOrder ?? nextStudentOrder;
+      const result = await persistPhaseTransition("setup", {
+        studentOrder: order,
+        studentName: name,
+      });
+      setStudentName(name);
+      const serverNow = result.serverNow;
+      setClockOffset(serverNow.getTime() - Date.now());
+      setSetupStartTime(serverNow);
+      setSetupStartedAtMs(serverNow.getTime());
+      setPhase("setup");
+    } catch (err) {
+      // Fallback: start locally if server fails
+      setSyncError("Could not sync with server. Timer running locally.");
+      setStudentName(name);
+      setSetupStartTime(new Date());
+      setPhase("setup");
+    }
   };
 
-  const startPresentation = () => {
+  const startPresentation = async () => {
     beep(audioCtx, soundEnabled, 660, 200, 2);
-    setPresentationStartTime(new Date());
-    setPhase("presenting");
+
+    try {
+      setSyncError(null);
+      const result = await persistPhaseTransition("presenting");
+      const serverNow = result.serverNow;
+      setClockOffset(serverNow.getTime() - Date.now());
+      setPresentationStartTime(serverNow);
+      setPresentationStartedAtMs(serverNow.getTime());
+      setTotalPausedSeconds(0);
+      if (result.phase_setup_elapsed_at_transition != null) {
+        setSetupSeconds(result.phase_setup_elapsed_at_transition);
+      }
+      setPhase("presenting");
+    } catch {
+      setSyncError("Could not sync with server. Timer running locally.");
+      setPresentationStartTime(new Date());
+      setPhase("presenting");
+    }
   };
 
-  const pause = () => setPhase("paused");
-  const resume = () => setPhase("presenting");
+  const pause = async () => {
+    // Optimistic: update UI immediately
+    setPhase("paused");
+    setPauseStartTime(Date.now());
+    try {
+      setSyncError(null);
+      await persistPhaseTransition("paused");
+    } catch {
+      setSyncError("Pause not synced to server.");
+    }
+  };
 
-  const finish = () => {
+  const resume = async () => {
+    // Calculate how long we were paused
+    const pausedMs = pauseStartTime ? Date.now() - pauseStartTime : 0;
+    // Optimistic: update UI immediately
+    setPhase("presenting");
+    setTotalPausedSeconds((prev) => prev + Math.floor(pausedMs / 1000));
+    setPauseStartTime(null);
+    try {
+      setSyncError(null);
+      const result = await persistPhaseTransition("presenting", { addPausedMs: pausedMs });
+      // Update paused total from server (authoritative)
+      setTotalPausedSeconds(Math.floor((result.phase_total_paused_ms ?? 0) / 1000));
+    } catch {
+      setSyncError("Resume not synced to server.");
+    }
+  };
+
+  const finish = async () => {
+    // Optimistic: update UI immediately
     setEndTime(new Date());
     beep(audioCtx, soundEnabled, 1100, 260, 2);
     setPhase("finished");
+    try {
+      setSyncError(null);
+      const result = await persistPhaseTransition("finished");
+      if (result.phase_elapsed_at_finish != null) {
+        setElapsed(result.phase_elapsed_at_finish);
+      }
+    } catch {
+      setSyncError("Finish not synced to server.");
+    }
   };
 
   const persistStudentRecord = async (): Promise<boolean> => {
@@ -382,6 +594,8 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
         feedback: cleanedFeedback,
       });
 
+      // Clear server live timer state
+      clearLiveTimerState().catch(() => {});
       clearFeedbackDraft(storageKeyAtSave);
 
       const completedNow = studentsCompleted + 1;
@@ -453,6 +667,26 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
             </div>
           </div>
         </div>
+
+        {syncError && (
+          <div className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <WifiOff className="h-4 w-4 shrink-0" />
+            <span>{syncError}</span>
+            <button
+              type="button"
+              className="ml-auto text-xs font-medium text-amber-600 hover:text-amber-800"
+              onClick={() => setSyncError(null)}
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
+        {restoringState && (
+          <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+            Restoring timer state from server...
+          </div>
+        )}
 
         {phase === "idle" && (
           <Card className="rounded-3xl border-0 shadow-sm">
@@ -1206,6 +1440,41 @@ export default function LiveJuryView({ activeSession }: { activeSession: JurySes
                 {adjusting ? "Updating..." : "Update Count"}
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showDeviceLock} onOpenChange={() => {}}>
+        <DialogContent className="max-w-md" onPointerDownOutside={(e) => e.preventDefault()}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Monitor className="h-5 w-5" />
+              Session Active Elsewhere
+            </DialogTitle>
+            <DialogDescription>
+              Another device is currently controlling this jury session.
+              {deviceLockInfo && deviceLockInfo.locked && (
+                <span className="mt-1 block text-xs text-slate-400">
+                  Last active: {Math.round((Date.now() - deviceLockInfo.lastHeartbeat.getTime()) / 1000)}s ago
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Button
+              className="w-full rounded-2xl"
+              onClick={() => void handleTakeOver()}
+              disabled={takingOver}
+            >
+              {takingOver ? "Taking over..." : "Take Over Control"}
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full rounded-2xl"
+              onClick={() => setShowDeviceLock(false)}
+            >
+              View Only
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

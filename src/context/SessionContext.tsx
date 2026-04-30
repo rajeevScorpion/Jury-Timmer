@@ -1,8 +1,9 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import type { DaySetupInput, Feedback, JurySession, RosterEntry, StudentRecord } from "@/types/session";
 import { computePerStudentPlan, computeRemainingPlan } from "@/lib/timing";
+import { transitionPhase, sendHeartbeat, saveFeedbackDraft } from "@/lib/timerSync";
 
 const LS_KEY = "juryTimer.activeSessionId";
 
@@ -18,6 +19,16 @@ export type StudentRecordInput = {
   presentation_started_at: string | null;
   ended_at: string | null;
   feedback: Feedback;
+};
+
+type PhaseTransitionResult = {
+  serverNow: Date;
+  phase_setup_started_at: string | null;
+  phase_presentation_started_at: string | null;
+  phase_paused_at: string | null;
+  phase_total_paused_ms: number;
+  phase_elapsed_at_finish: number | null;
+  phase_setup_elapsed_at_transition: number | null;
 };
 
 type SessionValue = {
@@ -36,6 +47,15 @@ type SessionValue = {
   adjustStudentCount: (newTotal: number) => Promise<void>;
   updateRoster: (newRoster: RosterEntry[]) => Promise<void>;
   completedOrders: Set<number>;
+  /** Persist a phase transition to the server. */
+  persistPhaseTransition: (
+    phase: string,
+    opts?: { studentOrder?: number; studentName?: string; addPausedMs?: number },
+  ) => Promise<PhaseTransitionResult>;
+  /** Save feedback draft to server. */
+  saveFeedbackDraftToServer: (draft: Feedback) => Promise<void>;
+  /** Reset live timer columns to idle on the server. */
+  clearLiveTimerState: () => Promise<void>;
 };
 
 const SessionCtx = createContext<SessionValue | null>(null);
@@ -281,6 +301,54 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [user, activeSession, studentsCompleted, getConsumedSeconds, reload],
   );
 
+  // --- Live timer persistence ---
+
+  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (heartbeatRef.current) {
+      clearInterval(heartbeatRef.current);
+      heartbeatRef.current = null;
+    }
+    if (!activeSession || activeSession.status !== "active") return;
+    // Send initial heartbeat
+    sendHeartbeat(activeSession.id).catch(() => {});
+    // Heartbeat every 30s
+    heartbeatRef.current = setInterval(() => {
+      sendHeartbeat(activeSession.id).catch(() => {});
+    }, 30_000);
+    return () => {
+      if (heartbeatRef.current) {
+        clearInterval(heartbeatRef.current);
+        heartbeatRef.current = null;
+      }
+    };
+  }, [activeSession?.id, activeSession?.status]);
+
+  const persistPhaseTransition = useCallback(
+    async (
+      phase: string,
+      opts?: { studentOrder?: number; studentName?: string; addPausedMs?: number },
+    ): Promise<PhaseTransitionResult> => {
+      if (!activeSession) throw new Error("No active session");
+      return transitionPhase(activeSession.id, phase, opts);
+    },
+    [activeSession],
+  );
+
+  const saveFeedbackDraftToServer = useCallback(
+    async (draft: Feedback): Promise<void> => {
+      if (!activeSession) return;
+      await saveFeedbackDraft(activeSession.id, draft);
+    },
+    [activeSession],
+  );
+
+  const clearLiveTimerState = useCallback(async (): Promise<void> => {
+    if (!activeSession) return;
+    await transitionPhase(activeSession.id, "idle");
+  }, [activeSession]);
+
   const nextStudentOrder = studentsCompleted + 1;
   const isDayComplete = activeSession
     ? studentsCompleted >= activeSession.number_of_students
@@ -304,6 +372,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         adjustStudentCount,
         updateRoster,
         completedOrders,
+        persistPhaseTransition,
+        saveFeedbackDraftToServer,
+        clearLiveTimerState,
       }}
     >
       {children}
